@@ -6,73 +6,94 @@ import com.voxelengine.world.World;
 import java.util.LinkedList;
 import java.util.Queue;
 
-/**
- * Handles SkyLight and BlockLight propagation using BFS.
- */
 public class LightingEngine {
     
     private final World world;
-    private final Queue<LightNode> lightQueue = new LinkedList<>();
+    
+    // Separate queues to handle independent propagation
+    private final Queue<LightNode> skyLightQueue = new LinkedList<>();
+    private final Queue<LightNode> skyRemovalQueue = new LinkedList<>();
+    
+    private final Queue<LightNode> blockLightQueue = new LinkedList<>();
+    private final Queue<LightNode> blockRemovalQueue = new LinkedList<>();
 
     public LightingEngine(World world) {
         this.world = world;
     }
 
     /**
-     * Called when a block changes. 
-     * Handles both adding light (placing torch) and removing light (breaking torch/placing block).
+     * Entry point for block updates (Place/Break).
      */
     public void updateBlock(int x, int y, int z) {
         Block block = world.getBlock(x, y, z);
         
-        // Case 1: We placed a light source (Torch, Lava, etc.)
-        if (block.isLightSource()) {
-            world.setBlockLight(x, y, z, block.getLightLevel());
-            lightQueue.add(new LightNode(x, y, z, block.getLightLevel()));
+        // 1. Handle Block Light (Torches, Glowstone)
+        updateBlockLight(x, y, z, block);
+        
+        // 2. Handle Sky Light (Sun)
+        updateSkyLight(x, y, z, block);
+    }
+
+    // =========================================
+    // BLOCK LIGHT LOGIC (Standard Decay)
+    // =========================================
+    
+    private void updateBlockLight(int x, int y, int z, Block block) {
+        int oldLevel = world.getBlockLight(x, y, z);
+        int newLevel = block.getLightLevel();
+
+        if (newLevel > 0) {
+            // Placed a light source
+            world.setBlockLight(x, y, z, newLevel);
+            blockLightQueue.add(new LightNode(x, y, z, newLevel));
             propagateBlockLight();
-        } 
-        // Case 2: We placed an opaque block that blocks existing light
-        else if (!block.isTransparent()) {
-            removeLight(x, y, z);
-        }
-        // Case 3: We broke a block (Air). 
-        // This is complex: we need to check neighbors to see if light flows IN.
-        else {
-            // Check neighbors and add them to queue if they have light
-            int[][] dirs = {{1,0,0}, {-1,0,0}, {0,1,0}, {0,-1,0}, {0,0,1}, {0,0,-1}};
-            for (int[] d : dirs) {
-                int nx = x + d[0];
-                int ny = y + d[1];
-                int nz = z + d[2];
-                int level = world.getBlockLight(nx, ny, nz);
-                if (level > 0) {
-                    lightQueue.add(new LightNode(nx, ny, nz, level));
-                }
-                // Also check sky light
-                int sky = world.getSkyLight(nx, ny, nz);
-                if (sky > 0) {
-                    lightQueue.add(new LightNode(nx, ny, nz, sky));
-                }
-            }
-            propagateBlockLight();
-            propagateSkyLight();
+        } else if (oldLevel > 0) {
+            // Removed a light source OR placed a solid block blocking light
+            blockRemovalQueue.add(new LightNode(x, y, z, oldLevel));
+            world.setBlockLight(x, y, z, 0);
+            performBlockLightRemoval();
+            
+            // Re-propagate from neighbors to fill gaps
+            checkNeighborsForRelight(x, y, z, false);
+        } else if (!block.isTransparent()) {
+            // Placed solid block in dark area (might block existing light flowing through)
+            // We treat this as removing the light that WAS here (even if it was flow)
+            // But we can't read the old flow because we just overwrote the block.
+            // In a robust engine we read before set, but here we scan neighbors.
+            checkNeighborsForRelight(x, y, z, false);
+        } else {
+            // Broke a block (Air) - Light flows IN
+            checkNeighborsForRelight(x, y, z, false);
         }
     }
 
-    public void removeLight(int x, int y, int z) {
-        // 1. Queue initial removal
-        int val = world.getBlockLight(x, y, z);
-        if (val == 0) return;
+    private void performBlockLightRemoval() {
+        while (!blockRemovalQueue.isEmpty()) {
+            LightNode node = blockRemovalQueue.poll();
+            int[][] dirs = {{1,0,0}, {-1,0,0}, {0,1,0}, {0,-1,0}, {0,0,1}, {0,0,-1}};
+            
+            for (int[] d : dirs) {
+                int nx = node.x + d[0];
+                int ny = node.y + d[1];
+                int nz = node.z + d[2];
+                int neighborLevel = world.getBlockLight(nx, ny, nz);
+                
+                if (neighborLevel != 0 && neighborLevel < node.val) {
+                    // It was lit by us (it is dimmer), so darken it
+                    world.setBlockLight(nx, ny, nz, 0);
+                    blockRemovalQueue.add(new LightNode(nx, ny, nz, neighborLevel));
+                } else if (neighborLevel >= node.val) {
+                    // It is a source or lit by another path. Add to propagation queue.
+                    blockLightQueue.add(new LightNode(nx, ny, nz, neighborLevel));
+                }
+            }
+        }
+        propagateBlockLight();
+    }
 
-        Queue<LightNode> removeQueue = new LinkedList<>();
-        Queue<LightNode> relightQueue = new LinkedList<>();
-
-        removeQueue.add(new LightNode(x, y, z, val));
-        world.setBlockLight(x, y, z, 0);
-
-        // 2. Flood Darken
-        while (!removeQueue.isEmpty()) {
-            LightNode node = removeQueue.poll();
+    private void propagateBlockLight() {
+        while (!blockLightQueue.isEmpty()) {
+            LightNode node = blockLightQueue.poll();
             
             int[][] dirs = {{1,0,0}, {-1,0,0}, {0,1,0}, {0,-1,0}, {0,0,1}, {0,0,-1}};
             for (int[] d : dirs) {
@@ -80,30 +101,133 @@ public class LightingEngine {
                 int ny = node.y + d[1];
                 int nz = node.z + d[2];
                 
-                int neighborLevel = world.getBlockLight(nx, ny, nz);
-                
-                if (neighborLevel != 0 && neighborLevel < node.val) {
-                    // This neighbor was likely lit by 'node', so darken it
-                    world.setBlockLight(nx, ny, nz, 0);
-                    removeQueue.add(new LightNode(nx, ny, nz, neighborLevel));
-                } else if (neighborLevel >= node.val) {
-                    // This neighbor is lit by someone else (brighter or equal).
-                    // It can reinfect the dark area.
-                    relightQueue.add(new LightNode(nx, ny, nz, neighborLevel));
+                if (world.getBlock(nx, ny, nz).isTransparent()) {
+                    int currentLevel = world.getBlockLight(nx, ny, nz);
+                    if (currentLevel + 2 <= node.val) {
+                        world.setBlockLight(nx, ny, nz, node.val - 1);
+                        blockLightQueue.add(new LightNode(nx, ny, nz, node.val - 1));
+                    }
                 }
             }
         }
+    }
 
-        // 3. Flood Relight (from the boundaries)
-        this.lightQueue.addAll(relightQueue);
-        propagateBlockLight(); 
+    // =========================================
+    // SKY LIGHT LOGIC (Vertical 15 Rule)
+    // =========================================
+
+    private void updateSkyLight(int x, int y, int z, Block block) {
+        int oldLevel = world.getSkyLight(x, y, z);
+        
+        if (!block.isTransparent()) {
+            // Placed solid block. It kills sky light here.
+            if (oldLevel > 0) {
+                skyRemovalQueue.add(new LightNode(x, y, z, oldLevel));
+                world.setSkyLight(x, y, z, 0);
+                performSkyLightRemoval();
+            }
+        } else {
+            // Broke a block (Air). Light flows IN.
+            // CRITICAL: Check directly above for Sunlight Rule
+            int lightAbove = world.getSkyLight(x, y + 1, z);
+            if (lightAbove == 15) {
+                // We opened a hole to the sky/sunlight column
+                world.setSkyLight(x, y, z, 15);
+                skyLightQueue.add(new LightNode(x, y, z, 15));
+                propagateSkyLight();
+            } else {
+                // Standard flow from neighbors
+                checkNeighborsForRelight(x, y, z, true);
+            }
+        }
+    }
+
+    private void performSkyLightRemoval() {
+        while (!skyRemovalQueue.isEmpty()) {
+            LightNode node = skyRemovalQueue.poll();
+            int[][] dirs = {{1,0,0}, {-1,0,0}, {0,1,0}, {0,-1,0}, {0,0,1}, {0,0,-1}};
+            
+            for (int[] d : dirs) {
+                int nx = node.x + d[0];
+                int ny = node.y + d[1];
+                int nz = node.z + d[2];
+                int neighborLevel = world.getSkyLight(nx, ny, nz);
+                
+                if (neighborLevel == 0) continue;
+
+                // Logic to determine if neighbor was lit by 'node'
+                // Case A: Downward (Vertical Sunlight)
+                // If we are passing light DOWN (d[1] == -1) and both are 15, it was lit by us.
+                boolean verticalSun = (d[1] == -1 && node.val == 15 && neighborLevel == 15);
+                
+                // Case B: Standard Decay
+                boolean standardDecay = (neighborLevel < node.val);
+
+                if (verticalSun || standardDecay) {
+                    world.setSkyLight(nx, ny, nz, 0);
+                    skyRemovalQueue.add(new LightNode(nx, ny, nz, neighborLevel));
+                } else {
+                    // Neighbor sustains itself (source or other path). Re-propagate.
+                    skyLightQueue.add(new LightNode(nx, ny, nz, neighborLevel));
+                }
+            }
+        }
+        propagateSkyLight();
+    }
+
+    private void propagateSkyLight() {
+        while (!skyLightQueue.isEmpty()) {
+            LightNode node = skyLightQueue.poll();
+            int currentVal = node.val; // Use the value from queue or fetch fresh? Fresh is safer if updated.
+            // Optimization: If world value changed since queue, skip?
+            // For now, trust queue value, or fetch:
+            // int currentVal = world.getSkyLight(node.x, node.y, node.z);
+            
+            int[][] dirs = {{1,0,0}, {-1,0,0}, {0,1,0}, {0,-1,0}, {0,0,1}, {0,0,-1}};
+            for (int[] d : dirs) {
+                int nx = node.x + d[0];
+                int ny = node.y + d[1];
+                int nz = node.z + d[2];
+                
+                if (world.getBlock(nx, ny, nz).isTransparent()) {
+                    int neighborLevel = world.getSkyLight(nx, ny, nz);
+                    int expectedLevel = currentVal - 1;
+                    
+                    // SUNLIGHT RULE: Downwards propagation of 15 stays 15
+                    if (d[1] == -1 && currentVal == 15) {
+                        expectedLevel = 15;
+                    }
+                    
+                    if (neighborLevel < expectedLevel) {
+                        world.setSkyLight(nx, ny, nz, expectedLevel);
+                        skyLightQueue.add(new LightNode(nx, ny, nz, expectedLevel));
+                    }
+                }
+            }
+        }
+    }
+
+    private void checkNeighborsForRelight(int x, int y, int z, boolean isSky) {
+        int[][] dirs = {{1,0,0}, {-1,0,0}, {0,1,0}, {0,-1,0}, {0,0,1}, {0,0,-1}};
+        for (int[] d : dirs) {
+            int nx = x + d[0];
+            int ny = y + d[1];
+            int nz = z + d[2];
+            int level = isSky ? world.getSkyLight(nx, ny, nz) : world.getBlockLight(nx, ny, nz);
+            if (level > 0) {
+                if (isSky) skyLightQueue.add(new LightNode(nx, ny, nz, level));
+                else blockLightQueue.add(new LightNode(nx, ny, nz, level));
+            }
+        }
+        if (isSky) propagateSkyLight();
+        else propagateBlockLight();
     }
 
     public void calculateInitialLighting(int chunkX, int chunkZ) {
-        // Sky Light: Top-down
         int cx = chunkX * 16;
         int cz = chunkZ * 16;
         
+        // Initial Sky Light Pass (Top-Down)
         for (int x = 0; x < 16; x++) {
             for (int z = 0; z < 16; z++) {
                 int light = 15;
@@ -113,70 +237,20 @@ public class LightingEngine {
                     Block b = world.getBlock(wx, y, wz);
                     if (!b.isTransparent()) {
                         light = 0;
-                    } else if (light > 0 && b != Block.AIR && b != Block.WATER) { 
-                        light -= 1;
-                        if(light < 0) light = 0;
+                    } else if (light < 15 && light > 0) {
+                        // If we are already decaying, continue decay
+                        light--;
                     }
+                    // Note: If light is 15 and block is transparent, it STAYS 15.
+                    
                     world.setSkyLight(wx, y, wz, light);
                     if (light > 0) {
-                        lightQueue.add(new LightNode(wx, y, wz, light));
+                        skyLightQueue.add(new LightNode(wx, y, wz, light));
                     }
                 }
             }
         }
         propagateSkyLight();
-    }
-
-    private void propagateSkyLight() {
-        while (!lightQueue.isEmpty()) {
-            LightNode node = lightQueue.poll();
-            int x = node.x; int y = node.y; int z = node.z;
-            int lightLevel = world.getSkyLight(x, y, z);
-
-            if (lightLevel <= 0) continue;
-
-            int[][] dirs = {{1,0,0}, {-1,0,0}, {0,1,0}, {0,-1,0}, {0,0,1}, {0,0,-1}};
-            for (int[] d : dirs) {
-                int nx = x + d[0];
-                int ny = y + d[1];
-                int nz = z + d[2];
-                
-                Block nb = world.getBlock(nx, ny, nz);
-                if (nb.isTransparent()) {
-                    int currentNeighborLight = world.getSkyLight(nx, ny, nz);
-                    if (currentNeighborLight + 2 <= lightLevel) {
-                        world.setSkyLight(nx, ny, nz, lightLevel - 1);
-                        lightQueue.add(new LightNode(nx, ny, nz, lightLevel - 1));
-                    }
-                }
-            }
-        }
-    }
-    
-    private void propagateBlockLight() {
-        while (!lightQueue.isEmpty()) {
-            LightNode node = lightQueue.poll();
-            int x = node.x; int y = node.y; int z = node.z;
-            int light = world.getBlockLight(x, y, z);
-
-            if (light <= 0) continue;
-
-            int[][] dirs = {{1,0,0}, {-1,0,0}, {0,1,0}, {0,-1,0}, {0,0,1}, {0,0,-1}};
-            for (int[] d : dirs) {
-                int nx = x + d[0];
-                int ny = y + d[1];
-                int nz = z + d[2];
-                
-                Block nb = world.getBlock(nx, ny, nz);
-                if (nb.isTransparent()) {
-                    int neighborLight = world.getBlockLight(nx, ny, nz);
-                    if (neighborLight + 2 <= light) {
-                        world.setBlockLight(nx, ny, nz, light - 1);
-                        lightQueue.add(new LightNode(nx, ny, nz, light - 1));
-                    }
-                }
-            }
-        }
     }
 
     private static class LightNode {

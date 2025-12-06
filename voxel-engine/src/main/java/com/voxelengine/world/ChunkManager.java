@@ -16,9 +16,7 @@ public class ChunkManager {
 
     public ChunkManager(World world) {
         this.world = world;
-        this.generator = new TerrainGenerator(12345); // Seed
-        // Export preview on init
-        this.generator.exportPreview("output/worldgen_preview.png");
+        this.generator = new TerrainGenerator(12345);
     }
 
     public void setLighting(LightingEngine lighting) {
@@ -31,24 +29,28 @@ public class ChunkManager {
             return chunks.get(key);
         }
 
-        // Generate
+        // Only create if explicitly requested via this method
         Chunk chunk = new Chunk(chunkX, chunkZ);
         generator.generate(chunk);
         chunks.put(key, chunk);
 
-        // Light (Requires neighbors technically, but we do local init)
         if (lighting != null) {
             lighting.calculateInitialLighting(chunkX, chunkZ);
         }
 
         return chunk;
     }
+    
+    /**
+     * Checks if a chunk exists without creating it.
+     */
+    public boolean hasChunk(int chunkX, int chunkZ) {
+        return chunks.containsKey(getChunkKey(chunkX, chunkZ));
+    }
 
     private long getChunkKey(int x, int z) {
         return ((long)x << 32) | (z & 0xFFFFFFFFL);
     }
-
-// In ChunkManager class
 
     public void update(Vector3f playerPos) {
         int pChunkX = (int) Math.floor(playerPos.x / 16.0);
@@ -63,13 +65,11 @@ public class ChunkManager {
         }
 
         // 2. Unload (Garbage Collection)
-        // Iterate copy of keys to avoid ConcurrentModification
         java.util.List<Long> toRemove = new java.util.ArrayList<>();
 
         for (Chunk c : chunks.values()) {
             int dx = c.chunkX - pChunkX;
             int dz = c.chunkZ - pChunkZ;
-            // Simple Euclidean or Manhattan
             if (Math.abs(dx) > renderDistance + 2 || Math.abs(dz) > renderDistance + 2) {
                 toRemove.add(getChunkKey(c.chunkX, c.chunkZ));
             }
@@ -77,10 +77,9 @@ public class ChunkManager {
 
         for (Long key : toRemove) {
             chunks.remove(key);
-            // Chunk object is dropped.
-            // Renderer must clean up the mesh!
         }
     }
+
     public java.util.Collection<Chunk> getLoadedChunks() {
         return chunks.values();
     }

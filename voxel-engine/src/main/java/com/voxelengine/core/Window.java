@@ -20,18 +20,13 @@ public class Window {
     private boolean resized;
 
     public Window(String title, int width, int height) {
-        System.out.println("entering Window constructor in Window.java");
         this.title = title;
         this.width = width;
         this.height = height;
-        System.out.println("Window object created. Memory allocated: size unknown");
-        System.out.println("returning from Window constructor in Window.java");
     }
 
     public void init() {
-        System.out.println("entering init method in Window.java");
         GLFWErrorCallback.createPrint(System.err).set();
-        System.out.println("GLFWErrorCallback object created. Memory allocated: size unknown");
 
         if (!glfwInit()) {
             throw new IllegalStateException("Unable to initialize GLFW");
@@ -51,7 +46,6 @@ public class Window {
 
         // Setup resize callback
         glfwSetFramebufferSizeCallback(windowHandle, (window, w, h) -> {
-            System.out.println("framebuffer size callback triggered in Window.java");
             this.width = w;
             this.height = h;
             this.resized = true;
@@ -73,42 +67,33 @@ public class Window {
         
         // Basic clear color
         glClearColor(0.5f, 0.7f, 1.0f, 1.0f);
-        System.out.println("returning from init method in Window.java");
     }
 
     public void update() {
-        System.out.println("entering update method in Window.java");
         glfwSwapBuffers(windowHandle);
-        glfwPollEvents();
         Input.update();
-        System.out.println("returning from update method in Window.java");
+        glfwPollEvents();
     }
 
     public boolean shouldClose() {
-        System.out.println("entering shouldClose method in Window.java");
         return glfwWindowShouldClose(windowHandle);
     }
 
     public void cleanup() {
-        System.out.println("entering cleanup method in Window.java");
         glfwDestroyWindow(windowHandle);
         glfwTerminate();
         glfwSetErrorCallback(null).free();
-        System.out.println("returning from cleanup method in Window.java");
     }
 
-    public int getWidth() { System.out.println("entering getWidth method in Window.java"); return width; }
-    public int getHeight() { System.out.println("entering getHeight method in Window.java"); return height; }
+    public int getWidth() { return width; }
+    public int getHeight() {return height; }
     public boolean isResized() {
-        System.out.println("entering isResized method in Window.java");
         boolean ret = resized;
         resized = false;
         return ret;
     }
     
     public void setMouseGrabbed(boolean grabbed) {
-        System.out.println("entering setMouseGrabbed method in Window.java");
         glfwSetInputMode(windowHandle, GLFW_CURSOR, grabbed ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
-        System.out.println("returning from setMouseGrabbed method in Window.java");
     }
 }

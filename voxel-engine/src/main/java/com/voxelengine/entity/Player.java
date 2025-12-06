@@ -16,15 +16,11 @@ public class Player extends Entity {
 
     public Player(float x, float y, float z, Camera camera) {
         super(x, y, z, 0.6f, 1.8f);
-        System.out.println("entering Player constructor in Player.java");
         this.camera = camera;
-        System.out.println("Player object created. Memory allocated: size unknown");
-        System.out.println("returning from Player constructor in Player.java");
     }
 
     @Override
     public void tick(World world, PhysicsEngine physics, float dt) {
-        System.out.println("entering tick method in Player.java");
         input();
 
         // Crouch Logic (Size Change)
@@ -49,11 +45,9 @@ public class Player extends Entity {
 
         // Sync Player rotation for movement logic (yaw only)
         rotation.y = camera.getRotation().y;
-        System.out.println("returning from tick method in Player.java");
     }
 
     private void input() {
-        System.out.println("entering input method in Player.java");
         // Crouch
         isCrouching = Input.isKeyDown(GLFW_KEY_LEFT_SHIFT);
 
@@ -85,6 +79,5 @@ public class Player extends Entity {
             velocity.x += nx * speed * 0.2f; // Acceleration
             velocity.z += nz * speed * 0.2f;
         }
-        System.out.println("returning from input method in Player.java");
     }
 }
