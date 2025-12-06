@@ -24,6 +24,7 @@ public class UIManager {
     private final Mesh quadMesh;
     private final Matrix4f orthoProjection;
     private int crosshairTexture;
+    private int slotTexture;
     
     private final Inventory inventory;
 
@@ -59,6 +60,7 @@ public class UIManager {
     
     private void loadUITextures() {
         crosshairTexture = loadTexture("assets/ui/crosshair.png");
+        slotTexture = loadTexture("assets/ui/slot.png");
     }
 
     public static int loadTextureHelper(String path) {
@@ -82,62 +84,77 @@ public class UIManager {
         return texId;
     }
 
-    public void render(int windowWidth, int windowHeight) {
+        public void render(int windowWidth, int windowHeight) {
+        // Setup Orthographic Projection (0,0 is bottom-left)
         orthoProjection.identity().ortho(0, windowWidth, 0, windowHeight, -1, 1);
         
+        // CRITICAL: Disable Depth Test so UI draws ON TOP of the world
         glDisable(GL_DEPTH_TEST);
+        glDepthMask(false); 
+        
+        // Enable Transparency/Blending
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         
         shader.bind();
         shader.setUniform("uProjection", orthoProjection);
-        shader.setUniform("uView", new Matrix4f());
-        shader.setUniform("uUVScale", -1.0f); // Direct Mode
+        shader.setUniform("uView", new Matrix4f()); // Identity view
         
-        // 1. Draw Crosshair
+        // Trigger "Direct Mode" in fragment.glsl (No atlas calculations)
+        shader.setUniform("uUVScale", -1.0f); 
+        
+        // ---------------------------------------------------------
+        // PASS 1: Crosshair
+        // ---------------------------------------------------------
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, crosshairTexture);
         shader.setUniform("uTexture", 0);
-        // White, Full Alpha
         shader.setUniform("uColorMod", new org.joml.Vector4f(1.0f, 1.0f, 1.0f, 1.0f)); 
         
         float centerX = windowWidth / 2.0f;
         float centerY = windowHeight / 2.0f;
         float size = 16.0f;
         
-        Matrix4f model = new Matrix4f().translate(centerX, centerY, 0).scale(size, size, 1);
-        shader.setUniform("uModel", model);
+        Matrix4f crosshairModel = new Matrix4f().translate(centerX, centerY, 0).scale(size, size, 1);
+        shader.setUniform("uModel", crosshairModel);
         quadMesh.render();
         
-        // 2. Draw Hotbar
+        // ---------------------------------------------------------
+        // PASS 2: Hotbar Slots
+        // ---------------------------------------------------------
+        glBindTexture(GL_TEXTURE_2D, slotTexture); 
+        
         float slotSize = 40;
         float startX = centerX - (4.5f * slotSize);
         float y = 40;
         
-        // Ideally use a white square texture here, but we reuse crosshair for now
-        glBindTexture(GL_TEXTURE_2D, crosshairTexture); 
-        
         for (int i = 0; i < 9; i++) {
             boolean isSelected = (i == inventory.getSelectedSlot());
+            
+            // Calculate position for this slot
             Matrix4f slotModel = new Matrix4f()
                 .translate(startX + i * slotSize + (slotSize/2), y, 0)
                 .scale(slotSize/2 - 2, slotSize/2 - 2, 1);
+            
             shader.setUniform("uModel", slotModel);
             
             if (isSelected) {
-                // Bright White, Full Alpha
+                // Selected: Full Brightness, Full Opacity
                 shader.setUniform("uColorMod", new org.joml.Vector4f(1.0f, 1.0f, 1.0f, 1.0f)); 
             } else {
-                // Dim Grey, Full Alpha
-                shader.setUniform("uColorMod", new org.joml.Vector4f(0.5f, 0.5f, 0.5f, 1.0f)); 
+                // Unselected: Slightly dimmer, slightly transparent
+                shader.setUniform("uColorMod", new org.joml.Vector4f(0.9f, 0.9f, 0.9f, 0.9f)); 
             }
             
             quadMesh.render();
         }
         
         shader.unbind();
-        glDisable(GL_BLEND);
+        
+        // RESTORE OPENGL STATE (So world rendering works next frame)
+        glDepthMask(true);
         glEnable(GL_DEPTH_TEST);
+        glDisable(GL_BLEND);
     }
     
     public void cleanup() {

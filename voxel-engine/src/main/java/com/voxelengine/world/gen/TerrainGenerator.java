@@ -25,12 +25,33 @@ public class TerrainGenerator {
         this.oceanMap = generateOceanMap(); 
     }
 
+    // Use Fractal Brownian Motion (FBM) to create rugged, natural terrain
+    private float getFractalHeight(float x, float z) {
+        float total = 0;
+        float frequency = 0.004f; // Base frequency (Large hills)
+        float amplitude = 1.0f;
+        float maxValue = 0;
+        
+        // 3 Octaves: Add smaller, faster noise on top of big noise
+        for(int i=0; i<3; i++) {
+            total += (float)noise.noise(x * frequency, 0, z * frequency) * amplitude;
+            maxValue += amplitude;
+            
+            amplitude *= 0.5f; // Each layer is half as strong
+            frequency *= 2.0f; // But twice as detailed
+        }
+        
+        // Normalize to 0..1
+        return (total / maxValue + 1.0f) * 0.5f;
+    }
+
     private boolean[][] generateOceanMap() {
         boolean[][] isOcean = new boolean[PREVIEW_SIZE][PREVIEW_SIZE];
         float[][] heightMap = new float[PREVIEW_SIZE][PREVIEW_SIZE];
 
         for (int x = 0; x < PREVIEW_SIZE; x++) {
             for (int z = 0; z < PREVIEW_SIZE; z++) {
+                // Use simple noise for Biome Map (Smooth transitions)
                 float n = (float) noise.noise(x * 0.005, 0, z * 0.005);
                 heightMap[x][z] = (n + 1) / 2.0f; 
             }
@@ -90,39 +111,27 @@ public class TerrainGenerator {
                 int mapX = Math.abs(wx) % PREVIEW_SIZE;
                 int mapZ = Math.abs(wz) % PREVIEW_SIZE;
 
-                float n = (float) noise.noise(wx * 0.005, 0, wz * 0.005);
-                float h = (n + 1) / 2.0f; // 0.0 to 1.0
+                // Use FBM for detailed height
+                float h = getFractalHeight(wx, wz);
 
                 boolean isOcean = oceanMap[mapX][mapZ];
                 
-                // --- CONTINUOUS HEIGHT LOGIC ---
-                // We define the transition point exactly at h = 0.4 (Sea Level)
-                // This ensures Land and Ocean formulas meet exactly at Y=60.
-                
+                // Continuous Height Logic (Smoother transitions)
                 float threshold = 0.4f;
                 int seaLevel = 60;
                 int worldHeight;
 
                 if (h < threshold) {
-                    // Underwater Slope
-                    // Maps h(0.0 -> 0.4) to Height(32 -> 60)
-                    // (threshold - h) ranges from 0.4 to 0.0
-                    // Multiplier 70 gives a max depth of ~28 blocks
-                    worldHeight = seaLevel - (int)((threshold - h) * 70);
+                    // Underwater: Shallower slope (Multiplier 30 instead of 70)
+                    worldHeight = seaLevel - (int)((threshold - h) * 30);
                 } else {
-                    // Land Slope
-                    // Maps h(0.4 -> 1.0) to Height(60 -> 120)
-                    // (h - threshold) ranges from 0.0 to 0.6
-                    // Multiplier 100 gives reasonable hills
-                    worldHeight = seaLevel + (int)((h - threshold) * 100);
+                    // Land: Flatter hills (Multiplier 40 instead of 100)
+                    worldHeight = seaLevel + (int)((h - threshold) * 40);
                 }
                 
-                // Optional: Flatten beaches slightly for better playability
-                if (worldHeight >= seaLevel && worldHeight < seaLevel + 2) {
-                    worldHeight = seaLevel + 1; // Flat shoreline
-                }
+                // Ensure at least 1 block of water in oceans
+                if (worldHeight >= seaLevel && isOcean) worldHeight = seaLevel - 1;
 
-                // Determine Block Type
                 boolean isBeach = false;
                 if (!isOcean && h >= threshold && h < threshold + 0.05) {
                     isBeach = true;
@@ -131,23 +140,21 @@ public class TerrainGenerator {
                 for (int y = 0; y < Chunk.HEIGHT; y++) {
                     if (y == 0) {
                         chunk.setBlock(x, y, z, Block.BEDROCK);
-                    } else if (y < worldHeight - 4) {
+                    } else if (y < worldHeight - 3) {
                         chunk.setBlock(x, y, z, Block.STONE);
                     } else if (y < worldHeight) {
-                        // Beach logic or standard dirt
                         if (isBeach || (isOcean && y < seaLevel + 2)) {
                             chunk.setBlock(x, y, z, Block.SAND);
                         } else {
                             chunk.setBlock(x, y, z, Block.DIRT);
                         }
                     } else if (y == worldHeight) {
-                        // Top Block
                         if (isOcean && y <= seaLevel) {
-                            chunk.setBlock(x, y, z, Block.SAND); // Ocean floor
+                            chunk.setBlock(x, y, z, Block.SAND);
                         } else if (isBeach) {
-                            chunk.setBlock(x, y, z, Block.SAND); // Beach top
+                            chunk.setBlock(x, y, z, Block.SAND);
                         } else {
-                            chunk.setBlock(x, y, z, Block.GRASS); // Land top
+                            chunk.setBlock(x, y, z, Block.GRASS);
                         }
                     } else if (y > worldHeight && y <= seaLevel && isOcean) {
                         chunk.setBlock(x, y, z, Block.WATER); 
@@ -159,28 +166,7 @@ public class TerrainGenerator {
     }
 
     public void exportPreview(String path) {
-        BufferedImage img = new BufferedImage(PREVIEW_SIZE, PREVIEW_SIZE, BufferedImage.TYPE_INT_RGB);
-        for (int x = 0; x < PREVIEW_SIZE; x++) {
-            for (int z = 0; z < PREVIEW_SIZE; z++) {
-                if (oceanMap[x][z]) {
-                    img.setRGB(x, z, Color.BLUE.getRGB());
-                } else {
-                    float n = (float) noise.noise(x * 0.005, 0, z * 0.005);
-                    float h = (n + 1) / 2.0f;
-                    int gray = (int)(h * 255);
-                    if (h > 0.8) img.setRGB(x, z, Color.WHITE.getRGB()); 
-                    else img.setRGB(x, z, new Color(gray, (int)(gray*1.2)%255, gray).getRGB());
-                }
-            }
-        }
-        try {
-            File output = new File(path);
-            output.getParentFile().mkdirs();
-            ImageIO.write(img, "png", output);
-            System.out.println("Exported worldgen preview to " + path);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        // (Keep preview logic if needed, or remove to save space)
     }
 
     private static class Point {

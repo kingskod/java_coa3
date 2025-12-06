@@ -78,6 +78,19 @@ public class AssetGenerator {
             g.dispose();
             try { ImageIO.write(img, "png", crosshair); } catch (IOException e) {}
         }
+        File slot = dir.resolve("slot.png").toFile();
+        if (!slot.exists()) {
+            BufferedImage img = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D g = img.createGraphics();
+            // Semi-transparent black background
+            g.setColor(new Color(0, 0, 0, 100));
+            g.fillRect(0, 0, 16, 16);
+            // White Border
+            g.setColor(new Color(200, 200, 200, 255));
+            g.drawRect(0, 0, 15, 15);
+            g.dispose();
+            try { ImageIO.write(img, "png", slot); } catch (IOException e) {}
+        }
     }
 
     private static void generateSounds(Path dir) {
