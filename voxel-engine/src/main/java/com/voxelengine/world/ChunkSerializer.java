@@ -2,45 +2,48 @@ package com.voxelengine.world;
 
 import java.io.*;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
 public class ChunkSerializer {
 
-    private static final String SAVE_DIR = "saves/world1/";
+    // Default, can be changed by Main
+    public static String WORLD_NAME = "world1";
+    
+    private static String getSaveDir() {
+        return "saves/" + WORLD_NAME + "/";
+    }
 
+    // Initialize directory
     static {
+        createDir();
+    }
+    
+    public static void createDir() {
         try {
-            Files.createDirectories(Paths.get(SAVE_DIR));
+            Files.createDirectories(Paths.get(getSaveDir()));
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
     private static String getFileName(int x, int z) {
-        return SAVE_DIR + "chunk_" + x + "_" + z + ".dat";
+        return getSaveDir() + "chunk_" + x + "_" + z + ".dat";
     }
 
     public static boolean saveChunk(Chunk chunk) {
-        if (!chunk.isPopulated) return false; // Don't save half-gen chunks
+        if (!chunk.isPopulated) return false; 
+        
+        // Ensure dir exists (in case world name changed at runtime)
+        createDir();
 
         try (DataOutputStream out = new DataOutputStream(new GZIPOutputStream(new FileOutputStream(getFileName(chunk.chunkX, chunk.chunkZ))))) {
-            // Write coordinates to verify on load
             out.writeInt(chunk.chunkX);
             out.writeInt(chunk.chunkZ);
-
-            // Write Blocks (RLE Compression could be here, but GZIP handles raw arrays well enough for now)
-            // We need to access the raw byte array.
-            // Since `blocks` is private in Chunk, we need a getter or move this logic to Chunk.
-            // For now, we will assume we added a getter or package-private access.
-            // Let's rely on Chunk having a 'writeToStream' method we will add.
             chunk.writeToStream(out);
-            
             return true;
         } catch (IOException e) {
-            System.err.println("Failed to save chunk " + chunk.chunkX + "," + chunk.chunkZ);
             e.printStackTrace();
             return false;
         }
@@ -53,16 +56,35 @@ public class ChunkSerializer {
         try (DataInputStream in = new DataInputStream(new GZIPInputStream(new FileInputStream(file)))) {
             int cx = in.readInt();
             int cz = in.readInt();
-            
-            if (cx != x || cz != z) return null; // Corrupt file or wrong name
+            if (cx != x || cz != z) return null; 
 
             Chunk chunk = new Chunk(x, z);
             chunk.readFromStream(in);
             return chunk;
         } catch (IOException e) {
-            System.err.println("Failed to load chunk " + x + "," + z);
-            // Delete corrupt file?
             return null;
+        }
+    }
+    
+    // --- NEW: Save/Load World Seed ---
+    
+    public static void saveSeed(long seed) {
+        createDir();
+        try (DataOutputStream out = new DataOutputStream(new FileOutputStream(getSaveDir() + "level.dat"))) {
+            out.writeLong(seed);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+    
+    public static long loadSeed() {
+        File f = new File(getSaveDir() + "level.dat");
+        if (!f.exists()) return 0; // Return 0 if new world
+        
+        try (DataInputStream in = new DataInputStream(new FileInputStream(f))) {
+            return in.readLong();
+        } catch (IOException e) {
+            return 0;
         }
     }
 }

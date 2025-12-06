@@ -22,8 +22,9 @@ import static org.lwjgl.glfw.GLFW.*;
 public class Main {
 
     public static void main(String[] args) {
+        com.voxelengine.world.ChunkSerializer.WORLD_NAME = "NewWorld1"; 
         AssetGenerator.verifyAndGenerateAssets();
-        Window window = new Window("Voxel Engine - Java Edition", 1280, 720);
+        Window window = new Window("Voxel Engine - " + com.voxelengine.world.ChunkSerializer.WORLD_NAME, 1280, 720);
         window.init();
 
         Camera camera = new Camera(window.getWidth(), window.getHeight());

@@ -20,6 +20,14 @@ public class ChunkManager {
 
     public ChunkManager(World world) {
         this.world = world;
+        long seed = ChunkSerializer.loadSeed();
+        if (seed == 0) {
+            seed = new java.util.Random().nextLong();
+            ChunkSerializer.saveSeed(seed);
+            System.out.println("Created New World. Seed: " + seed);
+        } else {
+            System.out.println("Loaded Existing World. Seed: " + seed);
+        }
         this.generator = new TerrainGenerator(12345);
     }
 
