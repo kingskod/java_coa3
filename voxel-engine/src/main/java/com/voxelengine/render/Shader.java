@@ -80,7 +80,11 @@ public class Shader {
         int loc = org.lwjgl.opengl.GL20.glGetUniformLocation(programId, name);
         if (loc != -1) org.lwjgl.opengl.GL20.glUniform1f(loc, value);
     }
-
+    public void setUniform(String name, org.joml.Vector4f value) {
+        int loc = org.lwjgl.opengl.GL20.glGetUniformLocation(programId, name);
+        if (loc != -1) org.lwjgl.opengl.GL20.glUniform4f(loc, value.x, value.y, value.z, value.w);
+    }
+    
     public void cleanup() {
         unbind();
         if (programId != 0) glDeleteProgram(programId);

@@ -11,7 +11,7 @@ public class Camera {
     private final Matrix4f viewMatrix;
 
     public Camera(int width, int height) {
-        this.position = new Vector3f(0, 80, 0); // Start high up
+        this.position = new Vector3f(10, 250, 10); // Start high up
         this.rotation = new Vector3f(0, 0, 0);
         this.projectionMatrix = new Matrix4f();
         this.viewMatrix = new Matrix4f();

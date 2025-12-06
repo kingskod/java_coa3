@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Map;
+import com.voxelengine.utils.Direction;
 
 import static org.lwjgl.opengl.GL11.*;
 import static org.lwjgl.opengl.GL12.GL_CLAMP_TO_EDGE;
@@ -82,7 +83,7 @@ public class TextureAtlas {
 
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
-                int pixel = pixels[y * width + x];
+                int pixel = pixels[y * width + x]; // Standard order
                 buffer.put((byte) ((pixel >> 16) & 0xFF)); // R
                 buffer.put((byte) ((pixel >> 8) & 0xFF));  // G
                 buffer.put((byte) (pixel & 0xFF));         // B
@@ -94,7 +95,7 @@ public class TextureAtlas {
         textureId = glGenTextures();
         glBindTexture(GL_TEXTURE_2D, textureId);
 
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
@@ -106,7 +107,19 @@ public class TextureAtlas {
     public int getTextureId() { return textureId; }
 
     // Returns the texture index (0..255) for the shader to calculate UVs
-    public int getIndex(String name) {
-        return textureIndex.getOrDefault(name, 0); // Default to first texture (usually error or grass)
-    }
+    public int getIndex(String name, Direction dir) {
+        // 1. Try exact match (e.g. "grass_up")
+        String exactName = name + "_" + dir.name().toLowerCase();
+        if (textureIndex.containsKey(exactName)) return textureIndex.get(exactName);
+        
+        // 2. Try generic "side" if direction is horizontal
+        if (dir != Direction.UP && dir != Direction.DOWN) {
+            String sideName = name + "_side";
+            if (textureIndex.containsKey(sideName)) return textureIndex.get(sideName);
+        }
+        
+        // 3. Fallback to base name (e.g. "grass")
+        return textureIndex.getOrDefault(name, 0);
+    }  // 2. Fallback to base name (e.g., "grass")
+       
 }

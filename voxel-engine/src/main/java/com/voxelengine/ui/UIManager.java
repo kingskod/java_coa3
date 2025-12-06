@@ -62,9 +62,6 @@ public class UIManager {
     }
 
     public static int loadTextureHelper(String path) {
-        // Helper redirect if needed, but better to implement locally or use utils
-        // This is just a stub wrapper if other classes call it static
-        // Ideally removed in clean code, but kept if you pasted previous buggy FontRenderer
         return 0; 
     }
 
@@ -95,11 +92,14 @@ public class UIManager {
         shader.bind();
         shader.setUniform("uProjection", orthoProjection);
         shader.setUniform("uView", new Matrix4f());
+        shader.setUniform("uUVScale", -1.0f); // Direct Mode
         
         // 1. Draw Crosshair
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, crosshairTexture);
         shader.setUniform("uTexture", 0);
+        // White, Full Alpha
+        shader.setUniform("uColorMod", new org.joml.Vector4f(1.0f, 1.0f, 1.0f, 1.0f)); 
         
         float centerX = windowWidth / 2.0f;
         float centerY = windowHeight / 2.0f;
@@ -114,7 +114,8 @@ public class UIManager {
         float startX = centerX - (4.5f * slotSize);
         float y = 40;
         
-        glBindTexture(GL_TEXTURE_2D, 0); 
+        // Ideally use a white square texture here, but we reuse crosshair for now
+        glBindTexture(GL_TEXTURE_2D, crosshairTexture); 
         
         for (int i = 0; i < 9; i++) {
             boolean isSelected = (i == inventory.getSelectedSlot());
@@ -124,16 +125,16 @@ public class UIManager {
             shader.setUniform("uModel", slotModel);
             
             if (isSelected) {
-                shader.setUniform("uColorMod", new org.joml.Vector3f(1, 1, 1)); 
+                // Bright White, Full Alpha
+                shader.setUniform("uColorMod", new org.joml.Vector4f(1.0f, 1.0f, 1.0f, 1.0f)); 
             } else {
-                shader.setUniform("uColorMod", new org.joml.Vector3f(0.5f, 0.5f, 0.5f)); 
+                // Dim Grey, Full Alpha
+                shader.setUniform("uColorMod", new org.joml.Vector4f(0.5f, 0.5f, 0.5f, 1.0f)); 
             }
             
-            glBindTexture(GL_TEXTURE_2D, crosshairTexture); 
             quadMesh.render();
         }
         
-        shader.setUniform("uColorMod", new org.joml.Vector3f(1, 1, 1)); 
         shader.unbind();
         glDisable(GL_BLEND);
         glEnable(GL_DEPTH_TEST);

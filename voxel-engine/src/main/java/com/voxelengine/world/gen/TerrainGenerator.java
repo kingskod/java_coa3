@@ -12,45 +12,30 @@ import java.util.LinkedList;
 import java.util.Queue;
 import java.util.Random;
 
-/**
- * Implements the full terrain algorithm:
- * Perlin Noise -> Basins/Oceans -> Decoration -> Strata.
- */
 public class TerrainGenerator {
 
     private static final int PREVIEW_SIZE = 1024;
     private final Noise noise;
     private final long seed;
-    private final boolean[][] oceanMap; // Global map for consistency in this implementation context
-
-    // In a real infinite world, we wouldn't pre-generate a 1024x1024 ocean map,
-    // we would use a biome noise generator.
-    // However, the spec asks to "Generate a 1024x1024 Perlin noise field... Identify basins... classify."
-    // We will do this logically.
+    private final boolean[][] oceanMap; 
 
     public TerrainGenerator(long seed) {
         this.seed = seed;
         this.noise = new Noise(seed);
-        this.oceanMap = generateOceanMap(); // Simulating the global basin analysis
+        this.oceanMap = generateOceanMap(); 
     }
 
-    /**
-     * Pre-computes ocean basins based on the prompt's requirements for the 1024 region.
-     * Uses Seed-consistent RNG.
-     */
     private boolean[][] generateOceanMap() {
         boolean[][] isOcean = new boolean[PREVIEW_SIZE][PREVIEW_SIZE];
         float[][] heightMap = new float[PREVIEW_SIZE][PREVIEW_SIZE];
 
-        // 1. Generate base elevation
         for (int x = 0; x < PREVIEW_SIZE; x++) {
             for (int z = 0; z < PREVIEW_SIZE; z++) {
                 float n = (float) noise.noise(x * 0.005, 0, z * 0.005);
-                heightMap[x][z] = (n + 1) / 2.0f; // Normalize 0..1
+                heightMap[x][z] = (n + 1) / 2.0f; 
             }
         }
 
-        // 2. Identify Basins (Flood fill connected components < waterLevel)
         float waterLevel = 0.4f;
         boolean[][] visited = new boolean[PREVIEW_SIZE][PREVIEW_SIZE];
         Random rng = new Random(seed);
@@ -58,7 +43,6 @@ public class TerrainGenerator {
         for (int x = 0; x < PREVIEW_SIZE; x++) {
             for (int z = 0; z < PREVIEW_SIZE; z++) {
                 if (!visited[x][z] && heightMap[x][z] < waterLevel) {
-                    // Found a basin. Flood fill to find extent.
                     Queue<Point> queue = new LinkedList<>();
                     LinkedList<Point> basin = new LinkedList<>();
                     queue.add(new Point(x, z));
@@ -83,7 +67,6 @@ public class TerrainGenerator {
                         }
                     }
 
-                    // 3. Randomly assign 60% of basins as oceans
                     if (rng.nextFloat() < 0.60f) {
                         for (Point p : basin) {
                             isOcean[p.x][p.z] = true;
@@ -104,55 +87,70 @@ public class TerrainGenerator {
                 int wx = cx + x;
                 int wz = cz + z;
 
-                // Map infinite coordinates to our 1024 logic map (wrapping for simplicity or clamping)
-                // For a "real" engine we'd use noise, but here we use the map as requested.
-                // We'll wrap the 1024 map to make the world infinite repeating.
                 int mapX = Math.abs(wx) % PREVIEW_SIZE;
                 int mapZ = Math.abs(wz) % PREVIEW_SIZE;
 
-                // Base Height
                 float n = (float) noise.noise(wx * 0.005, 0, wz * 0.005);
-                float h = (n + 1) / 2.0f; // 0..1
+                float h = (n + 1) / 2.0f; // 0.0 to 1.0
 
-                // Mountain modification
-                if (h > 0.8) {
-                    h = 0.8f + (float) Math.pow((h - 0.8) * 5, 2) * 0.2f; // Exponential
+                boolean isOcean = oceanMap[mapX][mapZ];
+                
+                // --- CONTINUOUS HEIGHT LOGIC ---
+                // We define the transition point exactly at h = 0.4 (Sea Level)
+                // This ensures Land and Ocean formulas meet exactly at Y=60.
+                
+                float threshold = 0.4f;
+                int seaLevel = 60;
+                int worldHeight;
+
+                if (h < threshold) {
+                    // Underwater Slope
+                    // Maps h(0.0 -> 0.4) to Height(32 -> 60)
+                    // (threshold - h) ranges from 0.4 to 0.0
+                    // Multiplier 70 gives a max depth of ~28 blocks
+                    worldHeight = seaLevel - (int)((threshold - h) * 70);
+                } else {
+                    // Land Slope
+                    // Maps h(0.4 -> 1.0) to Height(60 -> 120)
+                    // (h - threshold) ranges from 0.0 to 0.6
+                    // Multiplier 100 gives reasonable hills
+                    worldHeight = seaLevel + (int)((h - threshold) * 100);
+                }
+                
+                // Optional: Flatten beaches slightly for better playability
+                if (worldHeight >= seaLevel && worldHeight < seaLevel + 2) {
+                    worldHeight = seaLevel + 1; // Flat shoreline
                 }
 
-                int worldHeight = (int) (h * 128) + 64; // Scale
-                boolean isOcean = oceanMap[mapX][mapZ];
-                int waterLevel = 64 + (int)(0.4 * 128); // Roughly matches the map logic
-
-                // Decorate Edges (Sand)
+                // Determine Block Type
                 boolean isBeach = false;
-                if (!isOcean && h < 0.45) {
-                    // Check neighbors in map for ocean
-                    // Simple check: if close to water level
+                if (!isOcean && h >= threshold && h < threshold + 0.05) {
                     isBeach = true;
                 }
 
-                if (isOcean) {
-                    worldHeight = (int)(h * 100); // Deep ocean
-                }
-
-                // Fill Column
                 for (int y = 0; y < Chunk.HEIGHT; y++) {
                     if (y == 0) {
                         chunk.setBlock(x, y, z, Block.BEDROCK);
                     } else if (y < worldHeight - 4) {
                         chunk.setBlock(x, y, z, Block.STONE);
-                    } else if (y < worldHeight - 1) {
-                        chunk.setBlock(x, y, z, isBeach || isOcean ? Block.SAND : Block.DIRT);
-                    } else if (y == worldHeight) {
-                        if (isOcean) {
-                            chunk.setBlock(x, y, z, Block.SAND);
-                        } else if (isBeach) {
+                    } else if (y < worldHeight) {
+                        // Beach logic or standard dirt
+                        if (isBeach || (isOcean && y < seaLevel + 2)) {
                             chunk.setBlock(x, y, z, Block.SAND);
                         } else {
-                            chunk.setBlock(x, y, z, Block.GRASS);
+                            chunk.setBlock(x, y, z, Block.DIRT);
                         }
-                    } else if (y > worldHeight && y <= 60 && isOcean) {
-                        chunk.setBlock(x, y, z, Block.WATER); // Fill water for oceans
+                    } else if (y == worldHeight) {
+                        // Top Block
+                        if (isOcean && y <= seaLevel) {
+                            chunk.setBlock(x, y, z, Block.SAND); // Ocean floor
+                        } else if (isBeach) {
+                            chunk.setBlock(x, y, z, Block.SAND); // Beach top
+                        } else {
+                            chunk.setBlock(x, y, z, Block.GRASS); // Land top
+                        }
+                    } else if (y > worldHeight && y <= seaLevel && isOcean) {
+                        chunk.setBlock(x, y, z, Block.WATER); 
                     }
                 }
             }
@@ -170,7 +168,7 @@ public class TerrainGenerator {
                     float n = (float) noise.noise(x * 0.005, 0, z * 0.005);
                     float h = (n + 1) / 2.0f;
                     int gray = (int)(h * 255);
-                    if (h > 0.8) img.setRGB(x, z, Color.WHITE.getRGB()); // Peak
+                    if (h > 0.8) img.setRGB(x, z, Color.WHITE.getRGB()); 
                     else img.setRGB(x, z, new Color(gray, (int)(gray*1.2)%255, gray).getRGB());
                 }
             }

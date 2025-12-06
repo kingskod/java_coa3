@@ -19,31 +19,42 @@ public class Player extends Entity {
         this.camera = camera;
     }
 
-    @Override
+@Override
     public void tick(World world, PhysicsEngine physics, float dt) {
-        input();
+        // Safety Check: Never update if dt is corrupted
+        if (Float.isNaN(dt) || dt <= 0.0001f || dt > 1.0f) return;
 
-        // Crouch Logic (Size Change)
+        input();
+        
+        // Crouch Logic
         if (isCrouching) {
             this.height = 1.5f;
             this.boundingBox.maxY = this.boundingBox.minY + this.height;
         } else {
             this.height = 1.8f;
             this.boundingBox.maxY = this.boundingBox.minY + this.height;
-            // Note: If standing up into a block, physics will push us down or clip.
-            // A robust engine checks headroom before standing.
         }
 
         physics.resolveCollision(this, world, dt);
+        
+        // NAN PREVENTION: Check position before syncing camera
+        if (Float.isNaN(position.x) || Float.isNaN(position.y) || Float.isNaN(position.z)) {
+            // Emergency Recovery: Reset to a safe spot (high up)
+            System.err.println("Player position became NaN! Resetting.");
+            position.set(0, 150, 0); 
+            velocity.set(0, 0, 0);
+        }
 
-        // Sync Camera
-        // Eye level is usually near top of height
         camera.getPosition().set(position.x, position.y + height - 0.2f, position.z);
-
-        // Update Camera Rotation from Mouse Input
-        camera.rotate((float)Input.getDY() * 0.1f, (float)Input.getDX() * 0.1f);
-
-        // Sync Player rotation for movement logic (yaw only)
+        
+        float dy = (float)Input.getDY() * 0.1f;
+        float dx = (float)Input.getDX() * 0.1f;
+        
+        // Rotation Safety
+        if (!Float.isNaN(dx) && !Float.isNaN(dy)) {
+            camera.rotate(dy, dx);
+        }
+        
         rotation.y = camera.getRotation().y;
     }
 

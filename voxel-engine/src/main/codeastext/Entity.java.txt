@@ -15,43 +15,25 @@ public abstract class Entity {
     protected float width, height;
 
     public Entity(float x, float y, float z, float width, float height) {
-        System.out.println("entering Entity constructor in Entity.java");
-        System.out.println("initializing Vector3f for position");
         this.position = new Vector3f(x, y, z);
-        System.out.println("Vector3f for position object created. Memory allocated: size unknown");
-        System.out.println("finished initializing Vector3f for position");
         
-        System.out.println("initializing Vector3f for rotation");
         this.rotation = new Vector3f(0, 0, 0);
-        System.out.println("Vector3f for rotation object created. Memory allocated: size unknown");
-        System.out.println("finished initializing Vector3f for rotation");
         
-        System.out.println("initializing Vector3f for velocity");
         this.velocity = new Vector3f(0, 0, 0);
-        System.out.println("Vector3f for velocity object created. Memory allocated: size unknown");
-        System.out.println("finished initializing Vector3f for velocity");
         
         this.width = width;
         this.height = height;
         
-        System.out.println("initializing AABB for boundingBox");
         this.boundingBox = AABB.fromPositionSize(position, width, height);
-        System.out.println("AABB for boundingBox object created. Memory allocated: size unknown");
-        System.out.println("finished initializing AABB for boundingBox");
-        System.out.println("Entity object created. Memory allocated: size unknown");
-        System.out.println("returning from Entity constructor in Entity.java");
     }
 
     public abstract void tick(World world, PhysicsEngine physics, float dt);
 
     // Stub for rendering entities later
     public void render(Renderer renderer) {
-        System.out.println("entering render method in Entity.java");
-        System.out.println("returning from render method in Entity.java");
     }
 
     public Vector3f getPosition() {
-        System.out.println("entering getPosition method in Entity.java");
         return position;
     }
 }

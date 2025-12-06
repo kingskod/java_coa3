@@ -19,163 +19,95 @@ import static org.lwjgl.glfw.GLFW.*;
 public class Main {
 
     public static void main(String[] args) {
-        System.out.println("entering main method in Main.java");
-        System.out.println("initializing AssetGenerator");
         AssetGenerator.verifyAndGenerateAssets();
-        System.out.println("finished initializing AssetGenerator");
-
-        System.out.println("initializing Window");
         Window window = new Window("Voxel Engine - Java Edition", 1280, 720);
-        System.out.println("Window object created. Memory allocated: size unknown");
         window.init();
-        System.out.println("finished initializing Window");
 
-        System.out.println("initializing Camera");
         Camera camera = new Camera(window.getWidth(), window.getHeight());
-        System.out.println("Camera object created. Memory allocated: size unknown");
-        System.out.println("finished initializing Camera");
-
-        System.out.println("initializing Renderer");
         Renderer renderer = new Renderer();
-        System.out.println("Renderer object created. Memory allocated: size unknown");
-        System.out.println("finished initializing Renderer");
-
-        System.out.println("initializing World");
         World world = new World();
-        System.out.println("World object created. Memory allocated: size unknown");
-        System.out.println("finished initializing World");
-
-        System.out.println("initializing PhysicsEngine");
         PhysicsEngine physics = new PhysicsEngine();
-        System.out.println("PhysicsEngine object created. Memory allocated: size unknown");
-        System.out.println("finished initializing PhysicsEngine");
-
-        System.out.println("initializing Player");
-        Player player = new Player(0, 80, 0, camera);
-        System.out.println("Player object created. Memory allocated: size unknown");
-        System.out.println("finished initializing Player");
-
-        // Logic System (Redstone)
-        System.out.println("initializing LogicSystem");
+        Player player = new Player(0, 200, 0, camera);
+        
         LogicSystem logic = new LogicSystem(world);
-        System.out.println("LogicSystem object created. Memory allocated: size unknown");
-        System.out.println("finished initializing LogicSystem");
-
-
-        // UI
-        System.out.println("initializing Inventory");
         Inventory inventory = new Inventory();
-        System.out.println("Inventory object created. Memory allocated: size unknown");
-        System.out.println("finished initializing Inventory");
-
-        System.out.println("initializing UIManager");
         UIManager uiManager = new UIManager(inventory);
-        System.out.println("UIManager object created. Memory allocated: size unknown");
-        System.out.println("finished initializing UIManager");
 
+        final boolean[] mouseState = new boolean[2]; 
 
-        // Input State for clicks
-        final boolean[] mouseState = new boolean[2]; // [0]=Left, [1]=Right
-        System.out.println("mouseState object created. Memory allocated: size unknown");
-
-        System.out.println("initializing GameLoop");
         GameLoop gameLoop = new GameLoop(window);
-        System.out.println("GameLoop object created. Memory allocated: size unknown");
         gameLoop.setCallbacks(
-                () -> {
-                    // --- Logic Tick ---
-                    world.tick();
-                    player.tick(world, physics, 1.0f / 60.0f);
-                    world.getChunkManager().update(player.getPosition());
+            () -> {
+                world.tick();
+                player.tick(world, physics, 1.0f / 60.0f);
+                world.getChunkManager().update(player.getPosition());
 
-                    // Inventory Scrolling
-                    double scroll = Input.getScrollY();
-                    if (scroll != 0) inventory.scroll(scroll > 0 ? 1 : -1);
-
-                    // Block Interaction (Raycast)
-                    // Simple Raycast: Step forward from eye pos
-                    boolean clickedLeft = Input.isMouseButtonDown(0);
-                    boolean clickedRight = Input.isMouseButtonDown(1);
-
-                    if (clickedLeft && !mouseState[0]) {
-                        // Break Block
-                        raycast(world, camera, true, null, logic);
-                    }
-                    if (clickedRight && !mouseState[1]) {
-                        // Place Block
-                        raycast(world, camera, false, inventory.getSelectedBlock(), logic);
-                    }
-
-                    mouseState[0] = clickedLeft;
-                    mouseState[1] = clickedRight;
-                },
-                () -> {
-                    // --- Render Tick ---
-                    org.lwjgl.opengl.GL11.glClear(org.lwjgl.opengl.GL11.GL_COLOR_BUFFER_BIT | org.lwjgl.opengl.GL11.GL_DEPTH_BUFFER_BIT);
-                    if (window.isResized()) camera.updateProjection(window.getWidth(), window.getHeight());
-
-                    renderer.render(world, camera);
-                    uiManager.render(window.getWidth(), window.getHeight());
+                double scroll = Input.getScrollY();
+                if (scroll != 0) inventory.scroll(scroll > 0 ? 1 : -1);
+                
+                boolean clickedLeft = Input.isMouseButtonDown(0);
+                boolean clickedRight = Input.isMouseButtonDown(1);
+                
+                if (clickedLeft && !mouseState[0]) {
+                    raycast(world, camera, true, null, logic);
                 }
+                if (clickedRight && !mouseState[1]) {
+                    raycast(world, camera, false, inventory.getSelectedBlock(), logic);
+                }
+                
+                mouseState[0] = clickedLeft;
+                mouseState[1] = clickedRight;
+            },
+            () -> {
+                org.lwjgl.opengl.GL11.glClear(org.lwjgl.opengl.GL11.GL_COLOR_BUFFER_BIT | org.lwjgl.opengl.GL11.GL_DEPTH_BUFFER_BIT);
+                if (window.isResized()) camera.updateProjection(window.getWidth(), window.getHeight());
+                
+                renderer.render(world, camera);
+                uiManager.render(window.getWidth(), window.getHeight());
+            }
         );
-
+        
         window.setMouseGrabbed(true);
         gameLoop.run();
 
         uiManager.cleanup();
         renderer.cleanup();
         window.cleanup();
-        System.out.println("returning from main method in Main.java");
     }
-
+    
     private static void raycast(World world, Camera cam, boolean destroy, Block placeType, LogicSystem logic) {
-        System.out.println("entering raycast method in Main.java");
-        System.out.println("initializing Vector3f for pos");
         Vector3f pos = new Vector3f(cam.getPosition());
-        System.out.println("Vector3f for pos object created. Memory allocated: size unknown");
-        System.out.println("finished initializing Vector3f for pos");
-        
-        System.out.println("initializing Vector3f for dir");
         Vector3f dir = new Vector3f();
-        System.out.println("Vector3f for dir object created. Memory allocated: size unknown");
-        System.out.println("finished initializing Vector3f for dir");
-
         cam.getViewMatrix().positiveZ(dir).negate();
-
+        
         float step = 0.1f;
         for (float dist = 0; dist < 5.0f; dist += step) {
             pos.add(dir.x * step, dir.y * step, dir.z * step);
-
+            
             int x = (int) Math.floor(pos.x);
             int y = (int) Math.floor(pos.y);
             int z = (int) Math.floor(pos.z);
-
+            
             Block b = world.getBlock(x, y, z);
             if (b != Block.AIR && b != Block.WATER) {
                 if (destroy) {
                     world.setBlock(x, y, z, Block.AIR);
-                    logic.updateNetwork(x, y, z); // Update logic neighbors
-                    System.out.println("returning from raycast method in Main.java");
+                    logic.updateNetwork(x, y, z); 
                     return;
                 } else {
-                    // Place: Back up one step
                     pos.sub(dir.x * step, dir.y * step, dir.z * step);
                     int px = (int) Math.floor(pos.x);
                     int py = (int) Math.floor(pos.y);
                     int pz = (int) Math.floor(pos.z);
-
-                    // Prevent placing inside player
-                    // (Simple dist check or AABB check)
+                    
                     double distToPlayer = pos.distance(cam.getPosition());
                     if (distToPlayer > 1.0) {
                         world.setBlock(px, py, pz, placeType);
                         logic.updateNetwork(px, py, pz);
                     }
-                    System.out.println("returning from raycast method in Main.java");
                     return;
                 }
             }
         }
-        System.out.println("returning from raycast method in Main.java");
     }
 }

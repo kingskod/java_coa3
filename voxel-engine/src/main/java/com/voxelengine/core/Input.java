@@ -56,13 +56,13 @@ public class Input {
     public static double getMouseY() { return mouseY; }
     public static double getDX() { 
         double dx = mouseX - lastMouseX;
-        // Clamp to prevent snapping on focus loss
-        if (Math.abs(dx) > 100) return 0;
+        if (Double.isNaN(dx) || Math.abs(dx) > 1000) return 0; // Safety clamp
         return dx;
     }
+    
     public static double getDY() { 
         double dy = mouseY - lastMouseY;
-        if (Math.abs(dy) > 100) return 0;
+        if (Double.isNaN(dy) || Math.abs(dy) > 1000) return 0; // Safety clamp
         return dy;
     }
     public static double getScrollY() { return scrollY; }

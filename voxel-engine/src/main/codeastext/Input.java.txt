@@ -14,57 +14,56 @@ public class Input {
     private static double scrollX, scrollY;
 
     public static void init(long windowHandle) {
-        System.out.println("entering init method in Input.java");
         GLFW.glfwSetKeyCallback(windowHandle, (window, key, scancode, action, mods) -> {
-            System.out.println("key callback triggered in Input.java");
             if (key >= 0 && key < keys.length) {
                 keys[key] = action != GLFW.GLFW_RELEASE;
             }
         });
 
         GLFW.glfwSetMouseButtonCallback(windowHandle, (window, button, action, mods) -> {
-            System.out.println("mouse button callback triggered in Input.java");
             if (button >= 0 && button < mouseButtons.length) {
                 mouseButtons[button] = action != GLFW.GLFW_RELEASE;
             }
         });
 
         GLFW.glfwSetCursorPosCallback(windowHandle, (window, xpos, ypos) -> {
-            System.out.println("cursor position callback triggered in Input.java");
             mouseX = xpos;
             mouseY = ypos;
         });
 
         GLFW.glfwSetScrollCallback(windowHandle, (window, xoffset, yoffset) -> {
-            System.out.println("scroll callback triggered in Input.java");
             scrollX = xoffset;
             scrollY = yoffset;
         });
-        System.out.println("returning from init method in Input.java");
     }
 
     public static void update() {
-        System.out.println("entering update method in Input.java");
         lastMouseX = mouseX;
         lastMouseY = mouseY;
         scrollX = 0;
         scrollY = 0;
-        System.out.println("returning from update method in Input.java");
     }
 
     public static boolean isKeyDown(int key) {
-        System.out.println("entering isKeyDown method in Input.java");
         return keys[key];
     }
 
     public static boolean isMouseButtonDown(int button) {
-        System.out.println("entering isMouseButtonDown method in Input.java");
         return mouseButtons[button];
     }
 
-    public static double getMouseX() { System.out.println("entering getMouseX method in Input.java"); return mouseX; }
-    public static double getMouseY() { System.out.println("entering getMouseY method in Input.java"); return mouseY; }
-    public static double getDX() { System.out.println("entering getDX method in Input.java"); return mouseX - lastMouseX; }
-    public static double getDY() { System.out.println("entering getDY method in Input.java"); return mouseY - lastMouseY; }
-    public static double getScrollY() { System.out.println("entering getScrollY method in Input.java"); return scrollY; }
+    public static double getMouseX() { return mouseX; }
+    public static double getMouseY() { return mouseY; }
+    public static double getDX() { 
+        double dx = mouseX - lastMouseX;
+        if (Double.isNaN(dx) || Math.abs(dx) > 1000) return 0; // Safety clamp
+        return dx;
+    }
+    
+    public static double getDY() { 
+        double dy = mouseY - lastMouseY;
+        if (Double.isNaN(dy) || Math.abs(dy) > 1000) return 0; // Safety clamp
+        return dy;
+    }
+    public static double getScrollY() { return scrollY; }
 }

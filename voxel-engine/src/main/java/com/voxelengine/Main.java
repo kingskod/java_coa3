@@ -38,9 +38,30 @@ public class Main {
         GameLoop gameLoop = new GameLoop(window);
         gameLoop.setCallbacks(
             () -> {
+                world.getChunkManager().update(player.getPosition());
+
+                // 2. SAFETY CHECK: Is the ground ready?
+                // Convert player pos to integer coords
+                int px = (int) player.getPosition().x;
+                int pz = (int) player.getPosition().z;
+                
+                if (!world.isLoaded(px, pz)) {
+                    // Ground doesn't exist yet. Hover in the air.
+                    player.velocity.set(0, 0, 0); 
+                    // Optional: Force position high up so you don't clip when it loads
+                    if (player.getPosition().y < 80) player.getPosition().y = 80;
+                    return; // SKIP PHYSICS this frame
+                }
                 world.tick();
                 player.tick(world, physics, 1.0f / 60.0f);
                 world.getChunkManager().update(player.getPosition());
+                
+                if (Input.isKeyDown(GLFW_KEY_M)) {
+                    System.gc(); // Suggest Garbage Collection
+                    long used = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+                    System.out.println("Used Memory: " + (used / 1024 / 1024) + " MB");
+                    System.out.println("Loaded Chunks: " + world.getChunkManager().getLoadedChunks().size());
+                }
 
                 double scroll = Input.getScrollY();
                 if (scroll != 0) inventory.scroll(scroll > 0 ? 1 : -1);
@@ -69,7 +90,7 @@ public class Main {
         
         window.setMouseGrabbed(true);
         gameLoop.run();
-        
+
         uiManager.cleanup();
         renderer.cleanup();
         window.cleanup();

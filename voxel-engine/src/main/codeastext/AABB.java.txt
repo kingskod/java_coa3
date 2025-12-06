@@ -7,55 +7,45 @@ public class AABB {
     public float maxX, maxY, maxZ;
 
     public AABB(float minX, float minY, float minZ, float maxX, float maxY, float maxZ) {
-        System.out.println("entering AABB constructor in AABB.java");
         this.minX = minX; this.minY = minY; this.minZ = minZ;
         this.maxX = maxX; this.maxY = maxY; this.maxZ = maxZ;
-        System.out.println("AABB object created. Memory allocated: size unknown");
-        System.out.println("returning from AABB constructor in AABB.java");
     }
 
     public static AABB fromPositionSize(Vector3f pos, float width, float height) {
-        System.out.println("entering fromPositionSize method in AABB.java");
         float w2 = width / 2f;
         return new AABB(
-                pos.x - w2, pos.y, pos.z - w2,
-                pos.x + w2, pos.y + height, pos.z + w2
+            pos.x - w2, pos.y, pos.z - w2,
+            pos.x + w2, pos.y + height, pos.z + w2
         );
     }
 
     public boolean intersects(AABB other) {
-        System.out.println("entering intersects method in AABB.java");
         return this.minX < other.maxX && this.maxX > other.minX &&
-                this.minY < other.maxY && this.maxY > other.minY &&
-                this.minZ < other.maxZ && this.maxZ > other.minZ;
+               this.minY < other.maxY && this.maxY > other.minY &&
+               this.minZ < other.maxZ && this.maxZ > other.minZ;
     }
 
     public void move(float x, float y, float z) {
-        System.out.println("entering move method in AABB.java");
         this.minX += x; this.maxX += x;
         this.minY += y; this.maxY += y;
         this.minZ += z; this.maxZ += z;
-        System.out.println("returning from move method in AABB.java");
     }
-
+    
     public void setPosition(Vector3f pos, float width, float height) {
-        System.out.println("entering setPosition method in AABB.java");
         float w2 = width / 2f;
         this.minX = pos.x - w2; this.maxX = pos.x + w2;
         this.minY = pos.y;      this.maxY = pos.y + height;
         this.minZ = pos.z - w2; this.maxZ = pos.z + w2;
-        System.out.println("returning from setPosition method in AABB.java");
     }
 
     public AABB expand(float x, float y, float z) {
-        System.out.println("entering expand method in AABB.java");
         float nx = minX, ny = minY, nz = minZ;
         float mx = maxX, my = maxY, mz = maxZ;
-
+        
         if (x < 0) nx += x; else mx += x;
         if (y < 0) ny += y; else my += y;
         if (z < 0) nz += z; else mz += z;
-
+        
         return new AABB(nx, ny, nz, mx, my, mz);
     }
 }

@@ -62,9 +62,6 @@ public class UIManager {
     }
 
     public static int loadTextureHelper(String path) {
-        // Helper redirect if needed, but better to implement locally or use utils
-        // This is just a stub wrapper if other classes call it static
-        // Ideally removed in clean code, but kept if you pasted previous buggy FontRenderer
         return 0; 
     }
 
@@ -95,7 +92,7 @@ public class UIManager {
         shader.bind();
         shader.setUniform("uProjection", orthoProjection);
         shader.setUniform("uView", new Matrix4f());
-        
+        shader.setUniform("uUVScale", -1.0f);
         // 1. Draw Crosshair
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, crosshairTexture);

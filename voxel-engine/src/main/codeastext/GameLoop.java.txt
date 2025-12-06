@@ -19,21 +19,15 @@ public class GameLoop {
     private Runnable renderCallback;
 
     public GameLoop(Window window) {
-        System.out.println("entering GameLoop constructor in GameLoop.java");
         this.window = window;
-        System.out.println("GameLoop object created. Memory allocated: size unknown");
-        System.out.println("returning from GameLoop constructor in GameLoop.java");
     }
 
     public void setCallbacks(Runnable update, Runnable render) {
-        System.out.println("entering setCallbacks method in GameLoop.java");
         this.updateCallback = update;
         this.renderCallback = render;
-        System.out.println("returning from setCallbacks method in GameLoop.java");
     }
 
     public void run() {
-        System.out.println("entering run method in GameLoop.java");
         long lastTime = System.nanoTime();
         double accumulator = 0.0;
 
@@ -63,6 +57,5 @@ public class GameLoop {
             // Basic performance saver
             try { Thread.sleep(1); } catch (InterruptedException e) {}
         }
-        System.out.println("returning from run method in GameLoop.java");
     }
 }
