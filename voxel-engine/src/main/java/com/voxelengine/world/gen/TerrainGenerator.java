@@ -2,6 +2,7 @@ package com.voxelengine.world.gen;
 
 import com.voxelengine.world.Block;
 import com.voxelengine.world.Chunk;
+import com.voxelengine.world.World;
 
 import javax.imageio.ImageIO;
 import java.awt.Color;
@@ -18,30 +19,28 @@ public class TerrainGenerator {
     private final Noise noise;
     private final long seed;
     private final boolean[][] oceanMap; 
+    private final TreeGenerator treeGenerator;
 
     public TerrainGenerator(long seed) {
         this.seed = seed;
         this.noise = new Noise(seed);
         this.oceanMap = generateOceanMap(); 
+        this.treeGenerator = new TreeGenerator();
     }
 
-    // Use Fractal Brownian Motion (FBM) to create rugged, natural terrain
     private float getFractalHeight(float x, float z) {
         float total = 0;
-        float frequency = 0.004f; // Base frequency (Large hills)
+        float frequency = 0.004f; 
         float amplitude = 1.0f;
         float maxValue = 0;
         
-        // 3 Octaves: Add smaller, faster noise on top of big noise
         for(int i=0; i<3; i++) {
             total += (float)noise.noise(x * frequency, 0, z * frequency) * amplitude;
             maxValue += amplitude;
-            
-            amplitude *= 0.5f; // Each layer is half as strong
-            frequency *= 2.0f; // But twice as detailed
+            amplitude *= 0.5f; 
+            frequency *= 2.0f; 
         }
         
-        // Normalize to 0..1
         return (total / maxValue + 1.0f) * 0.5f;
     }
 
@@ -51,7 +50,6 @@ public class TerrainGenerator {
 
         for (int x = 0; x < PREVIEW_SIZE; x++) {
             for (int z = 0; z < PREVIEW_SIZE; z++) {
-                // Use simple noise for Biome Map (Smooth transitions)
                 float n = (float) noise.noise(x * 0.005, 0, z * 0.005);
                 heightMap[x][z] = (n + 1) / 2.0f; 
             }
@@ -99,6 +97,7 @@ public class TerrainGenerator {
         return isOcean;
     }
 
+    // 1. Terrain Shape Pass (Writes to Chunk only)
     public void generate(Chunk chunk) {
         int cx = chunk.chunkX * 16;
         int cz = chunk.chunkZ * 16;
@@ -111,25 +110,19 @@ public class TerrainGenerator {
                 int mapX = Math.abs(wx) % PREVIEW_SIZE;
                 int mapZ = Math.abs(wz) % PREVIEW_SIZE;
 
-                // Use FBM for detailed height
                 float h = getFractalHeight(wx, wz);
-
                 boolean isOcean = oceanMap[mapX][mapZ];
                 
-                // Continuous Height Logic (Smoother transitions)
                 float threshold = 0.4f;
                 int seaLevel = 60;
                 int worldHeight;
 
                 if (h < threshold) {
-                    // Underwater: Shallower slope (Multiplier 30 instead of 70)
                     worldHeight = seaLevel - (int)((threshold - h) * 30);
                 } else {
-                    // Land: Flatter hills (Multiplier 40 instead of 100)
                     worldHeight = seaLevel + (int)((h - threshold) * 40);
                 }
                 
-                // Ensure at least 1 block of water in oceans
                 if (worldHeight >= seaLevel && isOcean) worldHeight = seaLevel - 1;
 
                 boolean isBeach = false;
@@ -164,9 +157,36 @@ public class TerrainGenerator {
         }
         chunk.isPopulated = true;
     }
+    
+    // 2. Population Pass (Places Trees - modifies World)
+    // Called by ChunkManager AFTER adding chunk to world
+    public void populate(Chunk chunk, World world) {
+        Random rng = new Random(seed + (long)chunk.chunkX * 341873128712L + (long)chunk.chunkZ * 132897987541L);
+        
+        // Try to place a few trees
+        int treeAttempts = 5; 
+        for(int i=0; i<treeAttempts; i++) {
+            int x = rng.nextInt(16);
+            int z = rng.nextInt(16);
+            int wx = chunk.worldX + x;
+            int wz = chunk.worldZ + z;
+            
+            // Find surface
+            int y = 255;
+            while(y > 0 && chunk.getBlockLocal(x, y, z) == Block.AIR) {
+                y--;
+            }
+            
+            // Tree conditions: On Grass, Above Water
+            if (chunk.getBlockLocal(x, y, z) == Block.GRASS && y > 60) {
+                // Place tree
+                treeGenerator.generateTree(world, wx, y + 1, wz);
+            }
+        }
+    }
 
     public void exportPreview(String path) {
-        // (Keep preview logic if needed, or remove to save space)
+        // (Optional preview logic)
     }
 
     private static class Point {

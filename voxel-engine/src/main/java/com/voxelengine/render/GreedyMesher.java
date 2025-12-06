@@ -50,7 +50,6 @@ public class GreedyMesher {
         int uAxis, vAxis, dAxis;
         int uMax, vMax;
 
-        // Configure axes based on direction plane
         if (dir == Direction.UP || dir == Direction.DOWN) {
             dAxis = 1; uAxis = 0; vAxis = 2; // y, x, z
             uMax = Chunk.WIDTH; vMax = Chunk.WIDTH;
@@ -68,7 +67,6 @@ public class GreedyMesher {
 
         for (int slice = 0; slice < dMax; slice++) {
             
-            // 1. Build Mask
             int n = 0;
             pos[dAxis] = slice;
             for (int v = 0; v < vMax; v++) {
@@ -81,16 +79,28 @@ public class GreedyMesher {
 
                     boolean visible = false;
                     if (current != Block.AIR) {
-                        if (neighbor == Block.AIR || neighbor.isTransparent()) {
-                             if (current == Block.WATER && neighbor == Block.WATER) visible = false;
-                             else visible = true;
+                        if (current.isWater()) {
+                            // Water Logic: Render if neighbor is Air OR neighbor is water with lower level?
+                            // Simple: Render if neighbor is Air. 
+                            // If neighbor is Water, culling depends on faces.
+                            if (neighbor == Block.AIR || (!neighbor.isWater() && neighbor.isTransparent())) {
+                                visible = true;
+                            } else if (neighbor.isWater() && dir == Direction.UP && neighbor != Block.WATER_SOURCE) {
+                                // Render water top if neighbor above is flowing water? 
+                                // Actually usually water-water faces are removed.
+                                visible = false;
+                            }
+                        } else {
+                            // Standard Solid/Transparent Logic
+                            if (neighbor == Block.AIR || neighbor.isTransparent()) {
+                                visible = true;
+                            }
                         }
                     }
                     mask[n++] = visible ? current : null;
                 }
             }
 
-            // 2. Greedy Meshing
             n = 0;
             for (int j = 0; j < vMax; j++) {
                 for (int i = 0; i < uMax; ) {
@@ -98,10 +108,10 @@ public class GreedyMesher {
                         Block type = mask[n];
                         int w = 1, h = 1;
 
-                        // Compute Width
+                        // Liquids don't merge well with greedy meshing due to height diffs
+                        // Only merge if not water, OR if water levels are identical (simplified here to just type)
                         while (i + w < uMax && mask[n + w] == type) w++;
 
-                        // Compute Height
                         boolean done = false;
                         while (j + h < vMax) {
                             for (int k = 0; k < w; k++) {
@@ -113,13 +123,11 @@ public class GreedyMesher {
                             h++;
                         }
 
-                        // Add Quad
                         int[] quadPos = new int[3];
                         quadPos[dAxis] = slice;
                         quadPos[uAxis] = i;
                         quadPos[vAxis] = j;
 
-                        // Lighting from neighbor
                         int lx = quadPos[0] + dir.x;
                         int ly = quadPos[1] + dir.y;
                         int lz = quadPos[2] + dir.z;
@@ -134,11 +142,20 @@ public class GreedyMesher {
                         }
 
                         float texIdx = atlas.getIndex(type.name().toLowerCase(), dir);
-                        FloatList buffer = type.isTransparent() ? transparentBuffer : opaqueBuffer;
+                        FloatList buffer = type.isWater() ? transparentBuffer : opaqueBuffer;
                         
-                        addQuad(buffer, dir, uAxis, vAxis, quadPos, w, h, sl, bl, texIdx);
+                        // Calculate Water Height
+                        float blockHeight = 1.0f;
+                        if (type.isWater()) {
+                            int level = type.getWaterLevel(); // 7=Source, 0=Low
+                            // Source (7) -> 0.9 (almost full)
+                            // Level 0 -> 0.1
+                            if (level == 7) blockHeight = 0.9f; 
+                            else blockHeight = (level + 1) / 9.0f;
+                        }
+                        
+                        addQuad(buffer, dir, uAxis, vAxis, quadPos, w, h, sl, bl, texIdx, blockHeight);
 
-                        // Clear Mask
                         for (int l = 0; l < h; l++) {
                             for (int k = 0; k < w; k++) {
                                 mask[n + k + l * uMax] = null;
@@ -163,13 +180,13 @@ public class GreedyMesher {
         return world.getBlock(chunk.worldX + nx, ny, chunk.worldZ + nz);
     }
 
-    private void addQuad(FloatList b, Direction dir, int uAxis, int vAxis, int[] pos, int w, int h, int sl, int bl, float tid) {
+    private void addQuad(FloatList b, Direction dir, int uAxis, int vAxis, int[] pos, int w, int h, int sl, int bl, float tid, float heightY) {
         float[] v0 = new float[]{pos[0], pos[1], pos[2]};
         float[] v1 = new float[]{pos[0], pos[1], pos[2]};
         float[] v2 = new float[]{pos[0], pos[1], pos[2]};
         float[] v3 = new float[]{pos[0], pos[1], pos[2]};
 
-        // Offset to face plane if Positive Direction
+        // Offset
         if (dir == Direction.EAST || dir == Direction.UP || dir == Direction.SOUTH) {
              v0[dir.x!=0?0:(dir.y!=0?1:2)]++;
              v1[dir.x!=0?0:(dir.y!=0?1:2)]++;
@@ -177,26 +194,37 @@ public class GreedyMesher {
              v3[dir.x!=0?0:(dir.y!=0?1:2)]++;
         }
 
-        // Expand along axes (passed explicitly now!)
-        // v0 is origin
+        // Apply Height scaling (If block is water)
+        // If Y-height < 1.0, we pull down the TOP vertices
+        // This only affects Y coordinates.
+        // Logic: if v[1] (y) is at 'top' (local + 1), clamp it to 'local + heightY'
+        
+        // This is complex for general greedy meshing. 
+        // We simplify: If heightY < 1.0, assume it's water and we lower the Y of any vertex that is at y+1.
+        
+        float baseY = pos[1];
+        
+        // Apply Expansion
         v1[uAxis] += w; 
         v2[uAxis] += w; v2[vAxis] += h;
         v3[vAxis] += h;
+        
+        // Apply Height Check
+        if (heightY < 1.0f) {
+            if (v0[1] > baseY + 0.1f) v0[1] = baseY + heightY;
+            if (v1[1] > baseY + 0.1f) v1[1] = baseY + heightY;
+            if (v2[1] > baseY + 0.1f) v2[1] = baseY + heightY;
+            if (v3[1] > baseY + 0.1f) v3[1] = baseY + heightY;
+        }
         
         float uMin = 0; float uMax = w;
         float vMin = 0; float vMax = h;
         float sLight = sl / 15.0f;
         float bLight = bl / 15.0f;
 
-        // Winding Order Logic
-        // Derived from Axis Cross Products
-        // Standard (CCW): SOUTH, WEST, DOWN
-        // Inverted (CW): NORTH, EAST, UP
-        
         boolean inverted = (dir == Direction.NORTH || dir == Direction.EAST || dir == Direction.UP);
 
         if (inverted) {
-             // CW Winding (0 -> 3 -> 2 -> 0 -> 2 -> 1)
              addVert(b, v0, uMin, vMin, sLight, bLight, tid);
              addVert(b, v3, uMin, vMax, sLight, bLight, tid);
              addVert(b, v2, uMax, vMax, sLight, bLight, tid);
@@ -204,7 +232,6 @@ public class GreedyMesher {
              addVert(b, v2, uMax, vMax, sLight, bLight, tid);
              addVert(b, v1, uMax, vMin, sLight, bLight, tid);
         } else {
-             // CCW Winding (0 -> 1 -> 2 -> 0 -> 2 -> 3)
              addVert(b, v0, uMin, vMin, sLight, bLight, tid);
              addVert(b, v1, uMax, vMin, sLight, bLight, tid);
              addVert(b, v2, uMax, vMax, sLight, bLight, tid);

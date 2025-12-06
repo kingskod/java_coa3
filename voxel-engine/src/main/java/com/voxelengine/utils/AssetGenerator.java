@@ -78,18 +78,23 @@ public class AssetGenerator {
             g.dispose();
             try { ImageIO.write(img, "png", crosshair); } catch (IOException e) {}
         }
-        File slot = dir.resolve("slot.png").toFile();
-        if (!slot.exists()) {
+        File selector = dir.resolve("selector.png").toFile();
+        if (!selector.exists()) {
             BufferedImage img = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
             Graphics2D g = img.createGraphics();
-            // Semi-transparent black background
-            g.setColor(new Color(0, 0, 0, 100));
-            g.fillRect(0, 0, 16, 16);
-            // White Border
-            g.setColor(new Color(200, 200, 200, 255));
-            g.drawRect(0, 0, 15, 15);
+            // Clear background
+            g.setBackground(new Color(0, 0, 0, 0));
+            g.clearRect(0, 0, 16, 16);
+            
+            // Thick White Border
+            g.setColor(Color.WHITE);
+            g.fillRect(0, 0, 16, 2);   // Top
+            g.fillRect(0, 14, 16, 2);  // Bottom
+            g.fillRect(0, 0, 2, 16);   // Left
+            g.fillRect(14, 0, 2, 16);  // Right
+            
             g.dispose();
-            try { ImageIO.write(img, "png", slot); } catch (IOException e) {}
+            try { ImageIO.write(img, "png", selector); } catch (IOException e) {}
         }
     }
 

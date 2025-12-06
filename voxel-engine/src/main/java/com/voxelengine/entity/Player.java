@@ -19,7 +19,7 @@ public class Player extends Entity {
         this.camera = camera;
     }
 
-@Override
+    @Override
     public void tick(World world, PhysicsEngine physics, float dt) {
         // Safety Check: Never update if dt is corrupted
         if (Float.isNaN(dt) || dt <= 0.0001f || dt > 1.0f) return;
@@ -89,6 +89,23 @@ public class Player extends Entity {
 
             velocity.x += nx * speed * 0.2f; // Acceleration
             velocity.z += nz * speed * 0.2f;
+        }
+    }
+
+    public void checkPickups(EntityManager manager, com.voxelengine.ui.Inventory inventory) {
+        for (Entity e : manager.getEntities()) {
+            if (e instanceof ItemEntity) {
+                ItemEntity item = (ItemEntity) e;
+                if (!item.canPickup()) continue;
+                
+                // Simple distance check (1.5 blocks)
+                if (position.distance(item.getPosition()) < 1.5f) {
+                    boolean added = inventory.add(item.getStack());
+                    if (added) {
+                        manager.remove(e);
+                    }
+                }
+            }
         }
     }
 }

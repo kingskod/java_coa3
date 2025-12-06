@@ -65,4 +65,21 @@ public class Chunk {
         blockLight[getIndex(x, y, z)] = (byte) val;
         isDirty = true;
     }
+    public void writeToStream(java.io.DataOutputStream out) throws java.io.IOException {
+        out.write(blocks);
+        // We generally don't save light maps, we recalculate them to save space
+        // unless you have dynamic user light sources.
+        // For a robust engine, let's save them to preserve torch placement lighting.
+        out.write(skyLight);
+        out.write(blockLight);
+        out.writeBoolean(isPopulated);
+    }
+
+    public void readFromStream(java.io.DataInputStream in) throws java.io.IOException {
+        in.readFully(blocks);
+        in.readFully(skyLight);
+        in.readFully(blockLight);
+        this.isPopulated = in.readBoolean();
+        this.isDirty = true; // Force mesh rebuild
+    }
 }

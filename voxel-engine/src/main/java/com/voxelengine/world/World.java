@@ -1,16 +1,19 @@
 package com.voxelengine.world;
 
+import com.voxelengine.logic.LogicSystem;
 import com.voxelengine.world.light.LightingEngine;
-import com.voxelengine.utils.Direction;
 
 public class World {
 
     private final ChunkManager chunkManager;
     private final LightingEngine lightingEngine;
+    private final LogicSystem logicSystem;
 
     public World() {
         this.chunkManager = new ChunkManager(this);
+        this.logicSystem = new LogicSystem(this); // Init logic first
         this.lightingEngine = new LightingEngine(this);
+        
         this.chunkManager.setLighting(this.lightingEngine);
     }
 
@@ -32,9 +35,27 @@ public class World {
         
         c.setBlock(lx, y, z & 15, block);
         lightingEngine.updateBlock(x, y, z);
+        logicSystem.updateNetwork(x, y, z); // For Redstone
         
-        // Update Neighbors if on boundary
+        // Fluid Scheduling
+        if (block.isWater()) {
+            logicSystem.scheduleTick(x, y, z, block, 5);
+        }
+        // Update neighbors (for flow into air)
+        checkNeighborTick(x + 1, y, z);
+        checkNeighborTick(x - 1, y, z);
+        checkNeighborTick(x, y, z + 1);
+        checkNeighborTick(x, y, z - 1);
+        checkNeighborTick(x, y - 1, z);
+        
         updateNeighbors(x, z, lx, lz);
+    }
+    
+    private void checkNeighborTick(int x, int y, int z) {
+        Block b = getBlock(x, y, z);
+        if (b.isWater()) {
+            logicSystem.scheduleTick(x, y, z, b, 5);
+        }
     }
     
     private void updateNeighbors(int worldX, int worldZ, int lx, int lz) {
@@ -50,7 +71,9 @@ public class World {
         }
     }
 
-    public void tick() {}
+    public void tick() {
+        logicSystem.tick();
+    }
 
     public ChunkManager getChunkManager() { return chunkManager; }
     

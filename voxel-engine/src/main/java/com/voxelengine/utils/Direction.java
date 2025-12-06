@@ -20,5 +20,20 @@ public enum Direction {
         this.vec = new Vector3i(x, y, z);
     }
 
+    public Direction opposite() {
+        switch (this) {
+            case UP: return DOWN;
+            case DOWN: return UP;
+            case NORTH: return SOUTH;
+            case SOUTH: return NORTH;
+            case EAST: return WEST;
+            case WEST: return EAST;
+            default: return UP;
+        }
+    }
+
     public static final Direction[] VALUES = values();
+    
+    // Horizontal directions for water flow and tree connection
+    public static final Direction[] HORIZONTAL = {NORTH, SOUTH, EAST, WEST};
 }
