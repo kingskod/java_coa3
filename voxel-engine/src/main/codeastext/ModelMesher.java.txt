@@ -5,16 +5,14 @@ import com.voxelengine.world.Block;
 import com.voxelengine.world.Chunk;
 import com.voxelengine.world.World;
 
-import java.util.Arrays;
+// We use GreedyMesher's FloatList to share the buffer logic
+import com.voxelengine.render.GreedyMesher.FloatList;
 
 public class ModelMesher {
 
-    private final FloatList opaqueBuffer = new FloatList();
-    private final FloatList transparentBuffer = new FloatList();
-
     public void generate(Chunk chunk, World world, TextureAtlas atlas, 
-                         GreedyMesher.FloatList targetOpaque, 
-                         GreedyMesher.FloatList targetTransparent) {
+                         FloatList targetOpaque, 
+                         FloatList targetTransparent) {
         
         for (int x = 0; x < Chunk.WIDTH; x++) {
             for (int z = 0; z < Chunk.WIDTH; z++) {
@@ -22,16 +20,11 @@ public class ModelMesher {
                     Block block = chunk.getBlockLocal(x, y, z);
                     if (block == Block.AIR || block.isFullCube()) continue;
 
-                    // It's a special block (Water, Torch, Slab, etc)
-                    int wx = chunk.worldX + x;
-                    int wz = chunk.worldZ + z;
-                    
-                    // Determine light
-                    int sl = chunk.getSkyLight(x, y, z); // Internal light for models usually
+                    // Calculate Light
+                    int sl = chunk.getSkyLight(x, y, z);
                     int bl = chunk.getBlockLight(x, y, z);
-                    // Use neighbor light if it's a "solid" non-cube like a slab? 
-                    // For fluids/torches, internal light is fine.
 
+                    // Choose Buffer
                     FloatList buffer = block.isTransparent() || block.isWater() ? targetTransparent : targetOpaque;
                     
                     if (block.isWater()) {
@@ -39,8 +32,12 @@ public class ModelMesher {
                     } else if (block == Block.REDSTONE_TORCH) {
                         renderTorch(block, x, y, z, atlas, buffer, sl, bl);
                     } else {
-                        // Default fallback for wires/levers (Small Box)
-                        renderBox(block, x, y, z, 0.2f, 0.0f, 0.2f, 0.8f, 0.2f, 0.8f, atlas, buffer, sl, bl);
+                        // Default fallback for wires/levers (Small Box centered in block)
+                        // FIX: Add offsets to x,y,z directly instead of passing x,y,z as separate args
+                        renderBox(block, 
+                                  x + 0.2f, y + 0.0f, z + 0.2f,   // Min
+                                  x + 0.8f, y + 0.2f, z + 0.8f,   // Max
+                                  atlas, buffer, sl, bl);
                     }
                 }
             }
@@ -49,17 +46,16 @@ public class ModelMesher {
 
     private void renderFluid(Block block, int x, int y, int z, Chunk chunk, World world, TextureAtlas atlas, FloatList buffer, int sl, int bl) {
         float height = getFluidHeight(block);
-        float texIdx = atlas.getIndex("water", Direction.UP); // Use generic water texture
+        float texIdx = atlas.getIndex("water", Direction.UP); 
         
         // Top Face
-        // Only render if block above is Air (or different non-water block)
         Block above = getNeighbor(chunk, world, x, y + 1, z);
         if (!above.isWater()) {
             addQuad(buffer, x, y + height, z, x + 1, y + height, z + 1, 
                     0, 0, 1, 1, Direction.UP, sl, bl, texIdx);
         }
         
-        // Side Faces (Standard Culling)
+        // Side Faces
         renderFluidFace(x, y, z, -1, 0, 0, Direction.WEST, height, chunk, world, atlas, buffer, sl, bl);
         renderFluidFace(x, y, z, 1, 0, 0, Direction.EAST, height, chunk, world, atlas, buffer, sl, bl);
         renderFluidFace(x, y, z, 0, 0, -1, Direction.NORTH, height, chunk, world, atlas, buffer, sl, bl);
@@ -71,26 +67,12 @@ public class ModelMesher {
                                  Chunk chunk, World world, TextureAtlas atlas, FloatList buffer, int sl, int bl) {
         Block neighbor = getNeighbor(chunk, world, x + dx, y + dy, z + dz);
         
-        // Render side if neighbor is AIR or Transparent (but NOT Water)
         if (neighbor == Block.AIR || (!neighbor.isWater() && neighbor.isTransparent())) {
             float texIdx = atlas.getIndex("water", dir);
             
-            float x0 = x + (dx > 0 ? 1 : 0);
-            float y0 = y + (dy > 0 ? 1 : 0);
-            float z0 = z + (dz > 0 ? 1 : 0);
-            float x1 = x + (dx > 0 ? 1 : (dx < 0 ? 0 : 1));
-            // y1 is height dependent
-            float y1 = y + h; 
-            if (dir == Direction.DOWN) y1 = y; // Bottom face is flat
-            
-            float z1 = z + (dz > 0 ? 1 : (dz < 0 ? 0 : 1));
-            
-            // Adjust coords based on direction plane
             if (dir == Direction.NORTH || dir == Direction.SOUTH) {
-                // Z-plane: x varies, y varies
                 addQuad(buffer, x + (dx==0?0:1), y, z + (dz==0?0:1), x + (dx==0?1:0), y + h, z + (dz==0?0:1), 0, 0, 1, h, dir, sl, bl, texIdx);
             } else if (dir == Direction.WEST || dir == Direction.EAST) {
-                // X-plane: z varies, y varies
                 addQuad(buffer, x + (dx==0?0:1), y, z + (dz==0?0:1), x + (dx==0?0:1), y + h, z + (dz==0?1:0), 0, 0, 1, h, dir, sl, bl, texIdx);
             } else if (dir == Direction.DOWN) {
                 addQuad(buffer, x, y, z, x + 1, y, z + 1, 0, 0, 1, 1, dir, sl, bl, texIdx);
@@ -99,17 +81,14 @@ public class ModelMesher {
     }
 
     private void renderTorch(Block block, int x, int y, int z, TextureAtlas atlas, FloatList buffer, int sl, int bl) {
-        float texIdx = atlas.getIndex("redstone_torch", Direction.UP);
-        // Center post 2px wide (0.4375 to 0.5625)
-        // Height 0.6
+        // Torch centered
         renderBox(block, x + 0.4375f, y, z + 0.4375f, x + 0.5625f, y + 0.6f, z + 0.5625f, atlas, buffer, sl, bl);
     }
 
     private void renderBox(Block block, float x0, float y0, float z0, float x1, float y1, float z1, 
                            TextureAtlas atlas, FloatList buffer, int sl, int bl) {
-        float texIdx = atlas.getIndex(block.name().toLowerCase(), Direction.UP); // Simplified texture lookup
+        float texIdx = atlas.getIndex(block.name().toLowerCase(), Direction.UP);
         
-        // Draw all 6 faces unconditionally for small models
         addQuad(buffer, x0, y0, z1, x1, y1, z1, 0,0,1,1, Direction.SOUTH, sl, bl, texIdx);
         addQuad(buffer, x1, y0, z0, x0, y1, z0, 0,0,1,1, Direction.NORTH, sl, bl, texIdx);
         addQuad(buffer, x0, y0, z0, x0, y1, z1, 0,0,1,1, Direction.WEST, sl, bl, texIdx);
@@ -118,41 +97,13 @@ public class ModelMesher {
         addQuad(buffer, x0, y0, z0, x1, y0, z1, 0,0,1,1, Direction.DOWN, sl, bl, texIdx);
     }
 
-    // Generic Quad Adder (Similar to GreedyMesher but handles arbitrary floats)
     private void addQuad(FloatList b, float x0, float y0, float z0, float x1, float y1, float z1, 
                          float u0, float v0, float u1, float v1, Direction dir, int sl, int bl, float tid) {
         
         float sLight = sl / 15.0f;
         float bLight = bl / 15.0f;
         
-        // Define corners based on input rect
-        // We assume input is (Bottom-Left, Top-Right) in 3D space relative to direction
-        
-        // Auto-winding order fix logic
         boolean inverted = (dir == Direction.NORTH || dir == Direction.EAST || dir == Direction.UP);
-        
-        // Vertices (x,y,z)
-        // This simple box logic might need axis swizzling depending on call site.
-        // For 'renderFluid', I passed manually swizzled coords. 
-        // For 'renderBox', we need to be careful.
-        
-        // To save complexity in this batch, we just write the quad:
-        // v0(x0, y0, z0), v1(x1, y0, z~), v2(x1, y1, z~), v3(x0, y1, z~)
-        // This function assumes the caller provides corners in counter-clockwise (or clockwise) order for the face.
-        // Since I calculated corners in renderFluidFace, we just push them.
-        
-        // Swizzle based on dir if using min/max logic? 
-        // Let's assume input is 2 Points defining the diagonal of the quad in 3D space.
-        // We need 4 points.
-        
-        float[] p0 = {x0, y0, z0};
-        float[] p1 = {x1, y0, z0}; // This is wrong for general 3D diagonal.
-        
-        // Let's change the method signature to take 4 points to be generic? 
-        // Or implement specific logic per face direction like GreedyMesher.
-        
-        // REUSE LOGIC:
-        // Let's define the 4 points manually based on the inputs assuming they are Min/Max of the face.
         
         float[][] v = new float[4][3];
         
@@ -163,14 +114,14 @@ public class ModelMesher {
             v[3] = new float[]{x0, y0, z1};
         } else if (dir == Direction.NORTH || dir == Direction.SOUTH) {
             v[0] = new float[]{x0, y0, z0};
-            v[1] = new float[]{x1, y0, z0}; // x varies
-            v[2] = new float[]{x1, y1, z1}; // x, y vary
-            v[3] = new float[]{x0, y1, z1}; // y varies
+            v[1] = new float[]{x1, y0, z0};
+            v[2] = new float[]{x1, y1, z1};
+            v[3] = new float[]{x0, y1, z1};
         } else { // East/West
             v[0] = new float[]{x0, y0, z0};
-            v[1] = new float[]{x0, y0, z1}; // z varies
-            v[2] = new float[]{x1, y1, z1}; // z, y vary
-            v[3] = new float[]{x1, y1, z0}; // y varies
+            v[1] = new float[]{x0, y0, z1};
+            v[2] = new float[]{x1, y1, z1};
+            v[3] = new float[]{x1, y1, z0};
         }
         
         if (inverted) {

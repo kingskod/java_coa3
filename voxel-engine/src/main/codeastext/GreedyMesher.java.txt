@@ -9,7 +9,6 @@ import java.util.Arrays;
 
 public class GreedyMesher {
 
-    // Made public so ModelMesher can use it
     public static class FloatList {
         public float[] data = new float[4096];
         public int size = 0;
@@ -28,7 +27,6 @@ public class GreedyMesher {
     private final FloatList opaqueBuffer = new FloatList();
     private final FloatList transparentBuffer = new FloatList();
     
-    // NEW: Instance of ModelMesher
     private final ModelMesher modelMesher = new ModelMesher();
 
     public static class MeshData {
@@ -86,13 +84,11 @@ public class GreedyMesher {
 
                     boolean visible = false;
                     
-                    // --- CHANGED LOGIC: Only mesh Full Cubes ---
                     if (current != Block.AIR && current.isFullCube()) {
-                        // Render if neighbor is Air, or Transparent (unless neighbor is same type)
-                        // Also render if neighbor is non-full-cube (like Water or Torch)
+                        // Render if neighbor is Air, Transparent, or non-full (like water)
                         if (neighbor == Block.AIR || neighbor.isTransparent() || !neighbor.isFullCube()) {
                             visible = true;
-                            // Fix Z-fighting for leaves:
+                            // Fix Z-fighting for adjacent leaves
                             if (current == neighbor && current.isTransparent()) visible = false; 
                         }
                     }
@@ -139,9 +135,8 @@ public class GreedyMesher {
                         }
 
                         float texIdx = atlas.getIndex(type.name().toLowerCase(), dir);
-                        // Cutout materials (Leaves/Glass) must go to Opaque buffer for Depth Writing
+                        // Cutout blocks (Leaves/Glass) must write to depth, so use Opaque buffer
                         FloatList buffer = (type.isWater() || type.isTransparent()) ? transparentBuffer : opaqueBuffer;
-                        
                         if (type == Block.LEAVES || type == Block.GLASS) buffer = opaqueBuffer;
 
                         addQuad(buffer, dir, uAxis, vAxis, quadPos, w, h, sl, bl, texIdx);
@@ -176,11 +171,14 @@ public class GreedyMesher {
         float[] v2 = new float[]{pos[0], pos[1], pos[2]};
         float[] v3 = new float[]{pos[0], pos[1], pos[2]};
 
-        if (dir == Direction.EAST || dir == Direction.UP || dir == Direction.SOUTH) {
-             v0[dir.vec.minComponent()]++;
-             v1[dir.vec.minComponent()]++;
-             v2[dir.vec.minComponent()]++;
-             v3[dir.vec.minComponent()]++;
+        // FIX: Correct Axis Offset Logic
+        // This shifts the face plane to the far side of the block if direction is positive
+        if (dir == Direction.EAST) {
+             v0[0]++; v1[0]++; v2[0]++; v3[0]++;
+        } else if (dir == Direction.UP) {
+             v0[1]++; v1[1]++; v2[1]++; v3[1]++;
+        } else if (dir == Direction.SOUTH) {
+             v0[2]++; v1[2]++; v2[2]++; v3[2]++;
         }
 
         v1[uAxis] += w; 

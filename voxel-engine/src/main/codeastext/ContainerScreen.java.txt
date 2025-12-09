@@ -58,8 +58,8 @@ public class ContainerScreen {
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, bgTexture);
         shader.setUniform("uTexture", 0);
-        shader.setUniform("uUVScale", -1.0f); // Direct
-        shader.setUniform("uColorMod", new Vector4f(1,1,1,1));
+        shader.setUniform("uUVScale", -1.0f); // Direct Mode (Full Bright)
+        shader.setUniform("uColorMod", new Vector4f(1.0f, 1.0f, 1.0f, 1.0f)); // Pure White
         
         Matrix4f model = new Matrix4f().translate(startX, startY, 0).scale(uiWidth, uiHeight, 1);
         shader.setUniform("uModel", model);
@@ -72,26 +72,17 @@ public class ContainerScreen {
         
         // Grid Offsets (Based on Minecraft texture coords)
         float gridX = startX + (7 * scale);
-        float gridY = startY + (uiHeight - (17 * scale)); // Top-down y flip
-        // Actually OpenGL is Bottom-Up. 
-        // tab_items.png top is inventory grid. Bottom is hotbar.
-        // In OpenGL 0,0 is bottom left.
-        // We rendered BG from startY (bottom). 
-        // Hotbar is at bottom of texture (y=141 in texture space 0..166).
-        // Main grid starts at y=17.
+        // Manual tuning for bottom-left origin
+        float hotbarY = startY + (8 * scale); // Near bottom
+        float storageY = startY + (84 * scale); // Middle section
         
-        // Let's perform manual positioning loop.
         // Hotbar (Slots 0-8)
-        float hotbarY = startY + ((166 - 142 - 16) * scale); 
         renderGrid(shader, 0, 9, gridX, hotbarY, scale);
         
         // Storage (Slots 9-35)
-        // 3 Rows. 
-        float storageY = startY + ((166 - 18 - 16) * scale); // Top row
         renderGrid(shader, 9, 36, gridX, storageY, scale);
         
         // Render Counts (Text Pass)
-        // We do a second pass for text so it's on top
         renderCounts(0, 9, gridX, hotbarY, scale, ortho);
         renderCounts(9, 36, gridX, storageY, scale, ortho);
     }
@@ -104,12 +95,24 @@ public class ContainerScreen {
         int col = 0;
         int row = 0;
         
+        // Calculate rows based on count
+        // For storage (27 items), we want 3 rows of 9.
+        // We render bottom-up visually? No, slot 9 is top-left.
+        // OpenGL 0,0 is bottom-left.
+        // Row 0 (Slot 9-17) should be at Top of grid.
+        
         for (int i = startSlot; i < endSlot; i++) {
             ItemStack stack = inventory.getStack(i);
             if (!stack.isEmpty()) {
                 // Pos
+                // Logic: Higher row index = Lower Y position
                 float x = startX + (col * slotSize) + padding;
-                float y = startY - (row * slotSize) + padding;
+                float y = startY + ((2 - row) * slotSize) + padding; // Invert row for storage
+                
+                if (endSlot == 9) {
+                    // Hotbar is single row
+                    y = startY + padding;
+                }
                 
                 // Texture
                 int index = atlas.getIndex(stack.getBlock().name().toLowerCase(), Direction.SOUTH);
@@ -139,7 +142,9 @@ public class ContainerScreen {
             ItemStack stack = inventory.getStack(i);
             if (!stack.isEmpty() && stack.getCount() > 1) {
                 float x = startX + (col * slotSize);
-                float y = startY - (row * slotSize);
+                float y = startY + ((2 - row) * slotSize);
+                if (endSlot == 9) y = startY;
+                
                 fontRenderer.drawText(String.valueOf(stack.getCount()), x + 2, y + 2, 1.0f, ortho);
             }
             col++;
