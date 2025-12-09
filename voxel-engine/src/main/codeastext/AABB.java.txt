@@ -25,10 +25,16 @@ public class AABB {
                this.minZ < other.maxZ && this.maxZ > other.minZ;
     }
 
+    // Moves this AABB in place
     public void move(float x, float y, float z) {
         this.minX += x; this.maxX += x;
         this.minY += y; this.maxY += y;
         this.minZ += z; this.maxZ += z;
+    }
+    
+    // Returns a NEW AABB offset by the given amount (Used for converting local block box to world box)
+    public AABB offset(float x, float y, float z) {
+        return new AABB(minX + x, minY + y, minZ + z, maxX + x, maxY + y, maxZ + z);
     }
     
     public void setPosition(Vector3f pos, float width, float height) {
@@ -47,5 +53,10 @@ public class AABB {
         if (z < 0) nz += z; else mz += z;
         
         return new AABB(nx, ny, nz, mx, my, mz);
+    }
+    
+    @Override
+    public String toString() {
+        return String.format("AABB[%.2f, %.2f, %.2f -> %.2f, %.2f, %.2f]", minX, minY, minZ, maxX, maxY, maxZ);
     }
 }

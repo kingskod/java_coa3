@@ -2,80 +2,34 @@ package com.voxelengine.world.gen;
 
 import com.voxelengine.world.Block;
 import com.voxelengine.world.Chunk;
+import com.voxelengine.world.World;
 
-import javax.imageio.ImageIO;
-import java.awt.Color;
-import java.awt.image.BufferedImage;
-import java.io.File;
-import java.io.IOException;
-import java.util.LinkedList;
-import java.util.Queue;
 import java.util.Random;
 
 public class TerrainGenerator {
 
-    private static final int PREVIEW_SIZE = 1024;
     private final Noise noise;
+    private final TreeGenerator treeGenerator;
     private final long seed;
-    private final boolean[][] oceanMap; 
 
     public TerrainGenerator(long seed) {
         this.seed = seed;
         this.noise = new Noise(seed);
-        this.oceanMap = generateOceanMap(); 
+        this.treeGenerator = new TreeGenerator();
     }
 
-    private boolean[][] generateOceanMap() {
-        boolean[][] isOcean = new boolean[PREVIEW_SIZE][PREVIEW_SIZE];
-        float[][] heightMap = new float[PREVIEW_SIZE][PREVIEW_SIZE];
-
-        for (int x = 0; x < PREVIEW_SIZE; x++) {
-            for (int z = 0; z < PREVIEW_SIZE; z++) {
-                float n = (float) noise.noise(x * 0.005, 0, z * 0.005);
-                heightMap[x][z] = (n + 1) / 2.0f; 
-            }
+    // Fractal Brownian Motion (FBM) for detail
+    private float getNoise(float x, float z, int octaves, float frequency, float amplitude) {
+        float total = 0;
+        float max = 0;
+        for (int i = 0; i < octaves; i++) {
+            total += noise.noise(x * frequency, 0, z * frequency) * amplitude;
+            max += amplitude;
+            frequency *= 2.0f;
+            amplitude *= 0.5f;
         }
-
-        float waterLevel = 0.4f;
-        boolean[][] visited = new boolean[PREVIEW_SIZE][PREVIEW_SIZE];
-        Random rng = new Random(seed);
-
-        for (int x = 0; x < PREVIEW_SIZE; x++) {
-            for (int z = 0; z < PREVIEW_SIZE; z++) {
-                if (!visited[x][z] && heightMap[x][z] < waterLevel) {
-                    Queue<Point> queue = new LinkedList<>();
-                    LinkedList<Point> basin = new LinkedList<>();
-                    queue.add(new Point(x, z));
-                    visited[x][z] = true;
-
-                    while (!queue.isEmpty()) {
-                        Point p = queue.poll();
-                        basin.add(p);
-
-                        int[] dx = {1, -1, 0, 0};
-                        int[] dz = {0, 0, 1, -1};
-
-                        for (int i = 0; i < 4; i++) {
-                            int nx = p.x + dx[i];
-                            int nz = p.z + dz[i];
-                            if (nx >= 0 && nx < PREVIEW_SIZE && nz >= 0 && nz < PREVIEW_SIZE) {
-                                if (!visited[nx][nz] && heightMap[nx][nz] < waterLevel) {
-                                    visited[nx][nz] = true;
-                                    queue.add(new Point(nx, nz));
-                                }
-                            }
-                        }
-                    }
-
-                    if (rng.nextFloat() < 0.60f) {
-                        for (Point p : basin) {
-                            isOcean[p.x][p.z] = true;
-                        }
-                    }
-                }
-            }
-        }
-        return isOcean;
+        // Normalize roughly to -1..1 range then to 0..1
+        return (total / max + 1.0f) * 0.5f;
     }
 
     public void generate(Chunk chunk) {
@@ -87,49 +41,61 @@ public class TerrainGenerator {
                 int wx = cx + x;
                 int wz = cz + z;
 
-                int mapX = Math.abs(wx) % PREVIEW_SIZE;
-                int mapZ = Math.abs(wz) % PREVIEW_SIZE;
-
-                float n = (float) noise.noise(wx * 0.005, 0, wz * 0.005);
-                float h = (n + 1) / 2.0f; 
-
-                if (h > 0.8) {
-                    h = 0.8f + (float) Math.pow((h - 0.8) * 5, 2) * 0.2f; 
-                }
-
-                int worldHeight = (int) (h * 128) + 64; 
-                boolean isOcean = oceanMap[mapX][mapZ];
+                // 1. Continent Noise (Large scale, determines Ocean vs Land)
+                // Low freq (0.003) makes big continents
+                float continent = getNoise(wx, wz, 2, 0.003f, 1.0f); 
                 
-                boolean isBeach = false;
-                if (!isOcean && h < 0.45) {
-                    isBeach = true;
+                // 2. Detail Noise (Hills)
+                float detail = getNoise(wx, wz, 4, 0.01f, 1.0f);
+
+                // 3. Calculate Height
+                // Sea Level is 60.
+                // Threshold 0.5: < 0.5 is Ocean, > 0.5 is Land.
+                float threshold = 0.5f;
+                int worldHeight;
+                int seaLevel = 60;
+
+                if (continent < threshold) {
+                    // OCEAN
+                    // Ranges from 0.0 to 0.5. Map to depth.
+                    // Smooth curve approaching threshold to prevent underwater cliffs
+                    float depth = (threshold - continent) / threshold; // 1.0 (Deep) to 0.0 (Shore)
+                    worldHeight = seaLevel - (int)(depth * 30); // Max depth 30 blocks
+                } else {
+                    // LAND
+                    // Ranges from 0.5 to 1.0. Map to height.
+                    float heightFactor = (continent - threshold) / (1.0f - threshold); // 0.0 (Shore) to 1.0 (Inland)
+                    
+                    // Apply Detail (Hills) only where land is established
+                    // This blends hills down to 0 at the beach
+                    float finalHeight = heightFactor * 40.0f; // Base land rise
+                    finalHeight += heightFactor * detail * 20.0f; // Add hills
+                    
+                    worldHeight = seaLevel + (int)finalHeight;
                 }
 
-                if (isOcean) {
-                    worldHeight = (int)(h * 100); 
-                }
-
+                // Fill Column
                 for (int y = 0; y < Chunk.HEIGHT; y++) {
                     if (y == 0) {
                         chunk.setBlock(x, y, z, Block.BEDROCK);
-                    } else if (y < worldHeight - 4) {
+                    } else if (y < worldHeight - 3) {
                         chunk.setBlock(x, y, z, Block.STONE);
-                    } 
-                    // --- FIX IS HERE: Change 'worldHeight - 1' to 'worldHeight' ---
-                    else if (y < worldHeight) { 
-                        chunk.setBlock(x, y, z, isBeach || isOcean ? Block.SAND : Block.DIRT);
-                    } 
-                    // -------------------------------------------------------------
-                    else if (y == worldHeight) {
-                        if (isOcean) {
+                    } else if (y < worldHeight) {
+                        // Underwater/Beach is Sand/Gravel
+                        if (worldHeight <= seaLevel + 1) {
                             chunk.setBlock(x, y, z, Block.SAND);
-                        } else if (isBeach) {
-                            chunk.setBlock(x, y, z, Block.SAND);
+                        } else {
+                            chunk.setBlock(x, y, z, Block.DIRT);
+                        }
+                    } else if (y == worldHeight) {
+                        // Top Soil
+                        if (worldHeight <= seaLevel + 1) {
+                            chunk.setBlock(x, y, z, Block.SAND); // Beach
                         } else {
                             chunk.setBlock(x, y, z, Block.GRASS);
                         }
-                    } else if (y > worldHeight && y <= 60 && isOcean) {
-                        chunk.setBlock(x, y, z, Block.WATER); 
+                    } else if (y > worldHeight && y <= seaLevel) {
+                        chunk.setBlock(x, y, z, Block.WATER); // Fill ocean
                     }
                 }
             }
@@ -137,33 +103,41 @@ public class TerrainGenerator {
         chunk.isPopulated = true;
     }
 
-    public void exportPreview(String path) {
-        BufferedImage img = new BufferedImage(PREVIEW_SIZE, PREVIEW_SIZE, BufferedImage.TYPE_INT_RGB);
-        for (int x = 0; x < PREVIEW_SIZE; x++) {
-            for (int z = 0; z < PREVIEW_SIZE; z++) {
-                if (oceanMap[x][z]) {
-                    img.setRGB(x, z, Color.BLUE.getRGB());
-                } else {
-                    float n = (float) noise.noise(x * 0.005, 0, z * 0.005);
-                    float h = (n + 1) / 2.0f;
-                    int gray = (int)(h * 255);
-                    if (h > 0.8) img.setRGB(x, z, Color.WHITE.getRGB()); 
-                    else img.setRGB(x, z, new Color(gray, (int)(gray*1.2)%255, gray).getRGB());
+    public void populate(Chunk chunk, World world) {
+        // Deterministic Random per chunk (Trees same every reload)
+        long chunkSeed = seed + (long)chunk.chunkX * 341873128712L + (long)chunk.chunkZ * 132897987541L;
+        Random rng = new Random(chunkSeed);
+
+        // Try to place trees
+        int attempts = 4;
+        for (int i = 0; i < attempts; i++) {
+            int x = rng.nextInt(16);
+            int z = rng.nextInt(16);
+            int wx = chunk.worldX + x;
+            int wz = chunk.worldZ + z;
+
+            // Forest Noise (Biomes)
+            // If noise > 0.6, Dense Forest. If < 0.4, Plains (No trees).
+            float forestNoise = getNoise(wx, wz, 1, 0.01f, 1.0f);
+            
+            // Skip tree if in plains (Create gaps/fields)
+            if (forestNoise < 0.45f) continue;
+            
+            // Higher chance in forests
+            if (forestNoise > 0.6f || rng.nextInt(10) == 0) {
+                // Find surface
+                int y = 255;
+                while (y > 0 && chunk.getBlockLocal(x, y, z) == Block.AIR) {
+                    y--;
+                }
+
+                // Only plant on grass above water
+                if (chunk.getBlockLocal(x, y, z) == Block.GRASS && y >= 60) {
+                    treeGenerator.generateTree(world, rng, wx, y + 1, wz);
                 }
             }
         }
-        try {
-            File output = new File(path);
-            output.getParentFile().mkdirs();
-            ImageIO.write(img, "png", output);
-            System.out.println("Exported worldgen preview to " + path);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
     }
-
-    private static class Point {
-        int x, z;
-        Point(int x, int z) { this.x = x; this.z = z; }
-    }
+    
+    public void exportPreview(String path) {} // Removed to save space
 }

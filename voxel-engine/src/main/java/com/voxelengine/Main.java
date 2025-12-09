@@ -1,5 +1,6 @@
 package com.voxelengine;
 
+import com.voxelengine.audio.SoundManager;
 import com.voxelengine.core.GameLoop;
 import com.voxelengine.core.Input;
 import com.voxelengine.core.Window;
@@ -20,58 +21,72 @@ import org.joml.Vector3f;
 import static org.lwjgl.glfw.GLFW.*;
 
 public class Main {
+    
+    // UI State
+    private static boolean inventoryOpen = false;
+    private static boolean ePressed = false;
 
     public static void main(String[] args) {
-        com.voxelengine.world.ChunkSerializer.WORLD_NAME = "NewWorld1"; 
+        com.voxelengine.world.ChunkSerializer.WORLD_NAME = "world1"; 
         AssetGenerator.verifyAndGenerateAssets();
         Window window = new Window("Voxel Engine - " + com.voxelengine.world.ChunkSerializer.WORLD_NAME, 1280, 720);
         window.init();
+
+        // Sound System
+        SoundManager soundManager = new SoundManager();
+        soundManager.loadSound("step.wav", "step.wav");
+        soundManager.loadSound("break.wav", "break.wav");
+        soundManager.loadSound("place.wav", "place.wav");
+        soundManager.loadSound("splash.wav", "splash.wav");
 
         Camera camera = new Camera(window.getWidth(), window.getHeight());
         Renderer renderer = new Renderer();
         World world = new World();
         PhysicsEngine physics = new PhysicsEngine();
-        
-        // Spawn high up to avoid falling through terrain immediately
-        Player player = new Player(0, 100, 0, camera);
-        
-        // Entity System
+        Player player = new Player(0, 150, 0, camera, soundManager);
         EntityManager entityManager = new EntityManager();
-        
         LogicSystem logic = new LogicSystem(world);
         Inventory inventory = new Inventory();
-        inventory.load();
-        
-        // Pass TextureAtlas to UIManager for icons
-        UIManager uiManager = new UIManager(inventory, renderer.getTextureAtlas());
+        UIManager uiManager = new UIManager(inventory, renderer.getTextureAtlas(), world, entityManager);
 
         final boolean[] mouseState = new boolean[2]; 
 
         GameLoop gameLoop = new GameLoop(window);
         gameLoop.setCallbacks(
             () -> {
-                // 1. Chunk Loading
                 world.getChunkManager().update(player.getPosition());
 
-                // 2. Safety Check: Wait for ground to load before applying gravity
                 int px = (int) player.getPosition().x;
                 int pz = (int) player.getPosition().z;
-                
                 if (!world.isLoaded(px, pz)) {
                     player.velocity.set(0, 0, 0); 
                     if (player.getPosition().y < 80) player.getPosition().y = 80;
-                    return; // Skip physics until world exists
+                    return; 
                 }
 
-                // 3. Logic & Physics
+                // UI Input must be checked before game logic to pause it
+                uiManager.handleInput();
+
+                if (Input.isKeyDown(GLFW_KEY_E) && !uiManager.isChatOpen) {
+                    if (!ePressed) {
+                        uiManager.toggleInventory();
+                        inventoryOpen = uiManager.isInventoryOpen;
+                    }
+                    ePressed = true;
+                } else {
+                    ePressed = false;
+                }
+
+                // If UI is open, skip player logic
+                if (inventoryOpen || uiManager.isChatOpen) {
+                     return;
+                }
+
                 world.tick();
                 player.tick(world, physics, 1.0f / 60.0f);
                 entityManager.tick(world, physics, 1.0f / 60.0f);
-                
-                // 4. Pickup Logic
                 player.checkPickups(entityManager, inventory);
 
-                // 5. Input
                 double scroll = Input.getScrollY();
                 if (scroll != 0) inventory.scroll(scroll > 0 ? 1 : -1);
                 
@@ -79,25 +94,16 @@ public class Main {
                 boolean clickedRight = Input.isMouseButtonDown(1);
                 
                 if (clickedLeft && !mouseState[0]) {
-                    raycast(world, camera, true, inventory, logic, entityManager);
+                    raycast(world, camera, true, inventory, logic, entityManager, soundManager);
                 }
                 if (clickedRight && !mouseState[1]) {
-                    raycast(world, camera, false, inventory, logic, entityManager);
+                    raycast(world, camera, false, inventory, logic, entityManager, soundManager);
                 }
                 
                 mouseState[0] = clickedLeft;
                 mouseState[1] = clickedRight;
-
-                // Debug
-                if (Input.isKeyDown(GLFW_KEY_M)) {
-                    System.gc();
-                    long used = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
-                    System.out.println("Used Memory: " + (used / 1024 / 1024) + " MB");
-                    System.out.println("Loaded Chunks: " + world.getChunkManager().getLoadedChunks().size());
-                }
             },
             () -> {
-                // Render Tick
                 org.lwjgl.opengl.GL11.glClear(org.lwjgl.opengl.GL11.GL_COLOR_BUFFER_BIT | org.lwjgl.opengl.GL11.GL_DEPTH_BUFFER_BIT);
                 if (window.isResized()) camera.updateProjection(window.getWidth(), window.getHeight());
                 
@@ -109,14 +115,17 @@ public class Main {
         
         window.setMouseGrabbed(true);
         gameLoop.run();
-        inventory.save();
+        
         world.getChunkManager().saveAll();
+        inventory.save();
+
+        soundManager.cleanup();
         uiManager.cleanup();
         renderer.cleanup();
         window.cleanup();
     }
     
-    private static void raycast(World world, Camera cam, boolean destroy, Inventory inventory, LogicSystem logic, EntityManager entityManager) {
+    private static void raycast(World world, Camera cam, boolean destroy, Inventory inventory, LogicSystem logic, EntityManager entityManager, SoundManager soundManager) {
         Vector3f pos = new Vector3f(cam.getPosition());
         Vector3f dir = new Vector3f();
         cam.getViewMatrix().positiveZ(dir).negate();
@@ -130,18 +139,17 @@ public class Main {
             int z = (int) Math.floor(pos.z);
             
             Block b = world.getBlock(x, y, z);
-            if (b != Block.AIR && b != Block.WATER && !b.isWater()) {
+            if (b != Block.AIR && !b.isWater()) {
                 if (destroy) {
-                    // 1. Spawn Item
+                    if (b.getSoundType() != null) soundManager.play(b.getSoundType().breakSound);
+                    
                     ItemStack drop = new ItemStack(b, 1);
                     entityManager.addEntity(new ItemEntity(drop, x + 0.5f, y + 0.5f, z + 0.5f));
                     
-                    // 2. Remove Block
                     world.setBlock(x, y, z, Block.AIR);
                     logic.updateNetwork(x, y, z); 
                     return;
                 } else {
-                    // Place Logic
                     pos.sub(dir.x * step, dir.y * step, dir.z * step);
                     int px = (int) Math.floor(pos.x);
                     int py = (int) Math.floor(pos.y);
@@ -152,6 +160,8 @@ public class Main {
 
                     double distToPlayer = pos.distance(cam.getPosition());
                     if (distToPlayer > 1.0) {
+                        if (toPlace.getBlock().getSoundType() != null) soundManager.play(toPlace.getBlock().getSoundType().placeSound);
+                        
                         world.setBlock(px, py, pz, toPlace.getBlock());
                         inventory.useSelectedItem();
                         logic.updateNetwork(px, py, pz);

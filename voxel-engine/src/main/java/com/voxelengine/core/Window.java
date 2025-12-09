@@ -8,9 +8,6 @@ import org.lwjgl.system.MemoryUtil;
 import static org.lwjgl.glfw.GLFW.*;
 import static org.lwjgl.opengl.GL11.*;
 
-/**
- * Manages the GLFW window and OpenGL context.
- */
 public class Window {
 
     private final String title;
@@ -44,7 +41,6 @@ public class Window {
             throw new RuntimeException("Failed to create the GLFW window");
         }
 
-        // Setup resize callback
         glfwSetFramebufferSizeCallback(windowHandle, (window, w, h) -> {
             this.width = w;
             this.height = h;
@@ -58,15 +54,14 @@ public class Window {
         glfwSwapInterval(1); // Enable V-Sync
         glfwShowWindow(windowHandle);
 
-        // Initialize OpenGL capabilities
         GL.createCapabilities();
         
         glEnable(GL_DEPTH_TEST);
         glEnable(GL_CULL_FACE);
         glCullFace(GL_BACK);
         
-        // Basic clear color
-        glClearColor(0.5f, 0.7f, 1.0f, 1.0f);
+        // Black background, as sky color is handled by shader now
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     }
 
     public void update() {

@@ -9,7 +9,7 @@ import java.util.Arrays;
 
 public class GreedyMesher {
 
-    private static class FloatList {
+    public static class FloatList {
         public float[] data = new float[4096];
         public int size = 0;
         public void add(float val) {
@@ -26,6 +26,8 @@ public class GreedyMesher {
 
     private final FloatList opaqueBuffer = new FloatList();
     private final FloatList transparentBuffer = new FloatList();
+    
+    private final ModelMesher modelMesher = new ModelMesher();
 
     public static class MeshData {
         public Mesh opaque;
@@ -36,9 +38,13 @@ public class GreedyMesher {
         opaqueBuffer.clear();
         transparentBuffer.clear();
 
+        // 1. Greedy Pass (Full Cubes)
         for (Direction dir : Direction.VALUES) {
             generateFace(dir, chunk, world, atlas);
         }
+        
+        // 2. Model Pass (Complex Blocks)
+        modelMesher.generate(chunk, world, atlas, opaqueBuffer, transparentBuffer);
 
         MeshData result = new MeshData();
         if (opaqueBuffer.size > 0) result.opaque = new Mesh(opaqueBuffer.toArray());
@@ -66,7 +72,6 @@ public class GreedyMesher {
         int[] pos = new int[3];
 
         for (int slice = 0; slice < dMax; slice++) {
-            
             int n = 0;
             pos[dAxis] = slice;
             for (int v = 0; v < vMax; v++) {
@@ -78,23 +83,13 @@ public class GreedyMesher {
                     Block neighbor = getNeighbor(chunk, world, pos[0], pos[1], pos[2], dir);
 
                     boolean visible = false;
-                    if (current != Block.AIR) {
-                        if (current.isWater()) {
-                            // Water Logic: Render if neighbor is Air OR neighbor is water with lower level?
-                            // Simple: Render if neighbor is Air. 
-                            // If neighbor is Water, culling depends on faces.
-                            if (neighbor == Block.AIR || (!neighbor.isWater() && neighbor.isTransparent())) {
-                                visible = true;
-                            } else if (neighbor.isWater() && dir == Direction.UP && neighbor != Block.WATER_SOURCE) {
-                                // Render water top if neighbor above is flowing water? 
-                                // Actually usually water-water faces are removed.
-                                visible = false;
-                            }
-                        } else {
-                            // Standard Solid/Transparent Logic
-                            if (neighbor == Block.AIR || neighbor.isTransparent()) {
-                                visible = true;
-                            }
+                    
+                    if (current != Block.AIR && current.isFullCube()) {
+                        // Render if neighbor is Air, Transparent, or non-full (like water)
+                        if (neighbor == Block.AIR || neighbor.isTransparent() || !neighbor.isFullCube()) {
+                            visible = true;
+                            // Fix Z-fighting for adjacent leaves
+                            if (current == neighbor && current.isTransparent()) visible = false; 
                         }
                     }
                     mask[n++] = visible ? current : null;
@@ -108,8 +103,6 @@ public class GreedyMesher {
                         Block type = mask[n];
                         int w = 1, h = 1;
 
-                        // Liquids don't merge well with greedy meshing due to height diffs
-                        // Only merge if not water, OR if water levels are identical (simplified here to just type)
                         while (i + w < uMax && mask[n + w] == type) w++;
 
                         boolean done = false;
@@ -142,19 +135,11 @@ public class GreedyMesher {
                         }
 
                         float texIdx = atlas.getIndex(type.name().toLowerCase(), dir);
-                        FloatList buffer = type.isWater() ? transparentBuffer : opaqueBuffer;
-                        
-                        // Calculate Water Height
-                        float blockHeight = 1.0f;
-                        if (type.isWater()) {
-                            int level = type.getWaterLevel(); // 7=Source, 0=Low
-                            // Source (7) -> 0.9 (almost full)
-                            // Level 0 -> 0.1
-                            if (level == 7) blockHeight = 0.9f; 
-                            else blockHeight = (level + 1) / 9.0f;
-                        }
-                        
-                        addQuad(buffer, dir, uAxis, vAxis, quadPos, w, h, sl, bl, texIdx, blockHeight);
+                        // Cutout blocks (Leaves/Glass) must write to depth, so use Opaque buffer
+                        FloatList buffer = (type.isWater() || type.isTransparent()) ? transparentBuffer : opaqueBuffer;
+                        if (type == Block.LEAVES || type == Block.GLASS) buffer = opaqueBuffer;
+
+                        addQuad(buffer, dir, uAxis, vAxis, quadPos, w, h, sl, bl, texIdx);
 
                         for (int l = 0; l < h; l++) {
                             for (int k = 0; k < w; k++) {
@@ -180,42 +165,25 @@ public class GreedyMesher {
         return world.getBlock(chunk.worldX + nx, ny, chunk.worldZ + nz);
     }
 
-    private void addQuad(FloatList b, Direction dir, int uAxis, int vAxis, int[] pos, int w, int h, int sl, int bl, float tid, float heightY) {
+    private void addQuad(FloatList b, Direction dir, int uAxis, int vAxis, int[] pos, int w, int h, int sl, int bl, float tid) {
         float[] v0 = new float[]{pos[0], pos[1], pos[2]};
         float[] v1 = new float[]{pos[0], pos[1], pos[2]};
         float[] v2 = new float[]{pos[0], pos[1], pos[2]};
         float[] v3 = new float[]{pos[0], pos[1], pos[2]};
 
-        // Offset
-        if (dir == Direction.EAST || dir == Direction.UP || dir == Direction.SOUTH) {
-             v0[dir.x!=0?0:(dir.y!=0?1:2)]++;
-             v1[dir.x!=0?0:(dir.y!=0?1:2)]++;
-             v2[dir.x!=0?0:(dir.y!=0?1:2)]++;
-             v3[dir.x!=0?0:(dir.y!=0?1:2)]++;
+        // FIX: Correct Axis Offset Logic
+        // This shifts the face plane to the far side of the block if direction is positive
+        if (dir == Direction.EAST) {
+             v0[0]++; v1[0]++; v2[0]++; v3[0]++;
+        } else if (dir == Direction.UP) {
+             v0[1]++; v1[1]++; v2[1]++; v3[1]++;
+        } else if (dir == Direction.SOUTH) {
+             v0[2]++; v1[2]++; v2[2]++; v3[2]++;
         }
 
-        // Apply Height scaling (If block is water)
-        // If Y-height < 1.0, we pull down the TOP vertices
-        // This only affects Y coordinates.
-        // Logic: if v[1] (y) is at 'top' (local + 1), clamp it to 'local + heightY'
-        
-        // This is complex for general greedy meshing. 
-        // We simplify: If heightY < 1.0, assume it's water and we lower the Y of any vertex that is at y+1.
-        
-        float baseY = pos[1];
-        
-        // Apply Expansion
         v1[uAxis] += w; 
         v2[uAxis] += w; v2[vAxis] += h;
         v3[vAxis] += h;
-        
-        // Apply Height Check
-        if (heightY < 1.0f) {
-            if (v0[1] > baseY + 0.1f) v0[1] = baseY + heightY;
-            if (v1[1] > baseY + 0.1f) v1[1] = baseY + heightY;
-            if (v2[1] > baseY + 0.1f) v2[1] = baseY + heightY;
-            if (v3[1] > baseY + 0.1f) v3[1] = baseY + heightY;
-        }
         
         float uMin = 0; float uMax = w;
         float vMin = 0; float vMax = h;

@@ -107,19 +107,25 @@ public class TextureAtlas {
     public int getTextureId() { return textureId; }
 
     // Returns the texture index (0..255) for the shader to calculate UVs
+    // Returns the texture index (0..255) for the shader to calculate UVs
     public int getIndex(String name, Direction dir) {
-        // 1. Try exact match (e.g. "grass_up")
-        String exactName = name + "_" + dir.name().toLowerCase();
-        if (textureIndex.containsKey(exactName)) return textureIndex.get(exactName);
-        
-        // 2. Try generic "side" if direction is horizontal
-        if (dir != Direction.UP && dir != Direction.DOWN) {
-            String sideName = name + "_side";
-            if (textureIndex.containsKey(sideName)) return textureIndex.get(sideName);
+        // 1. Try specific direction (e.g. "grass_up", "log_up")
+        String sideName = name + "_" + dir.name().toLowerCase();
+        if (textureIndex.containsKey(sideName)) {
+            return textureIndex.get(sideName);
         }
         
-        // 3. Fallback to base name (e.g. "grass")
-        return textureIndex.getOrDefault(name, 0);
-    }  // 2. Fallback to base name (e.g., "grass")
+        // 2. Try generic "side"/ "top" mapping if horizontal
+        if (dir == Direction.UP || dir == Direction.DOWN) {
+             String topName = name + "_up"; // Try finding _up for both up/down if not specific
+             if (textureIndex.containsKey(topName)) return textureIndex.get(topName);
+        } else {
+             String sideGeneric = name + "_side";
+             if (textureIndex.containsKey(sideGeneric)) return textureIndex.get(sideGeneric);
+        }
+        
+        // 3. Fallback to base name (e.g., "grass")
+        return textureIndex.getOrDefault(name, 0); 
+    } // 2. Fallback to base name (e.g., "grass")
        
 }

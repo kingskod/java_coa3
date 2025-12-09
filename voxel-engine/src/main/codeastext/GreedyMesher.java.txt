@@ -9,7 +9,8 @@ import java.util.Arrays;
 
 public class GreedyMesher {
 
-    private static class FloatList {
+    // Made public so ModelMesher can use it
+    public static class FloatList {
         public float[] data = new float[4096];
         public int size = 0;
         public void add(float val) {
@@ -26,6 +27,9 @@ public class GreedyMesher {
 
     private final FloatList opaqueBuffer = new FloatList();
     private final FloatList transparentBuffer = new FloatList();
+    
+    // NEW: Instance of ModelMesher
+    private final ModelMesher modelMesher = new ModelMesher();
 
     public static class MeshData {
         public Mesh opaque;
@@ -36,9 +40,13 @@ public class GreedyMesher {
         opaqueBuffer.clear();
         transparentBuffer.clear();
 
+        // 1. Greedy Pass (Full Cubes)
         for (Direction dir : Direction.VALUES) {
             generateFace(dir, chunk, world, atlas);
         }
+        
+        // 2. Model Pass (Complex Blocks)
+        modelMesher.generate(chunk, world, atlas, opaqueBuffer, transparentBuffer);
 
         MeshData result = new MeshData();
         if (opaqueBuffer.size > 0) result.opaque = new Mesh(opaqueBuffer.toArray());
@@ -50,7 +58,6 @@ public class GreedyMesher {
         int uAxis, vAxis, dAxis;
         int uMax, vMax;
 
-        // Configure axes based on direction plane
         if (dir == Direction.UP || dir == Direction.DOWN) {
             dAxis = 1; uAxis = 0; vAxis = 2; // y, x, z
             uMax = Chunk.WIDTH; vMax = Chunk.WIDTH;
@@ -67,8 +74,6 @@ public class GreedyMesher {
         int[] pos = new int[3];
 
         for (int slice = 0; slice < dMax; slice++) {
-            
-            // 1. Build Mask
             int n = 0;
             pos[dAxis] = slice;
             for (int v = 0; v < vMax; v++) {
@@ -80,17 +85,21 @@ public class GreedyMesher {
                     Block neighbor = getNeighbor(chunk, world, pos[0], pos[1], pos[2], dir);
 
                     boolean visible = false;
-                    if (current != Block.AIR) {
-                        if (neighbor == Block.AIR || neighbor.isTransparent()) {
-                             if (current == Block.WATER && neighbor == Block.WATER) visible = false;
-                             else visible = true;
+                    
+                    // --- CHANGED LOGIC: Only mesh Full Cubes ---
+                    if (current != Block.AIR && current.isFullCube()) {
+                        // Render if neighbor is Air, or Transparent (unless neighbor is same type)
+                        // Also render if neighbor is non-full-cube (like Water or Torch)
+                        if (neighbor == Block.AIR || neighbor.isTransparent() || !neighbor.isFullCube()) {
+                            visible = true;
+                            // Fix Z-fighting for leaves:
+                            if (current == neighbor && current.isTransparent()) visible = false; 
                         }
                     }
                     mask[n++] = visible ? current : null;
                 }
             }
 
-            // 2. Greedy Meshing
             n = 0;
             for (int j = 0; j < vMax; j++) {
                 for (int i = 0; i < uMax; ) {
@@ -98,10 +107,8 @@ public class GreedyMesher {
                         Block type = mask[n];
                         int w = 1, h = 1;
 
-                        // Compute Width
                         while (i + w < uMax && mask[n + w] == type) w++;
 
-                        // Compute Height
                         boolean done = false;
                         while (j + h < vMax) {
                             for (int k = 0; k < w; k++) {
@@ -113,13 +120,11 @@ public class GreedyMesher {
                             h++;
                         }
 
-                        // Add Quad
                         int[] quadPos = new int[3];
                         quadPos[dAxis] = slice;
                         quadPos[uAxis] = i;
                         quadPos[vAxis] = j;
 
-                        // Lighting from neighbor
                         int lx = quadPos[0] + dir.x;
                         int ly = quadPos[1] + dir.y;
                         int lz = quadPos[2] + dir.z;
@@ -134,11 +139,13 @@ public class GreedyMesher {
                         }
 
                         float texIdx = atlas.getIndex(type.name().toLowerCase(), dir);
-                        FloatList buffer = type.isTransparent() ? transparentBuffer : opaqueBuffer;
+                        // Cutout materials (Leaves/Glass) must go to Opaque buffer for Depth Writing
+                        FloatList buffer = (type.isWater() || type.isTransparent()) ? transparentBuffer : opaqueBuffer;
                         
+                        if (type == Block.LEAVES || type == Block.GLASS) buffer = opaqueBuffer;
+
                         addQuad(buffer, dir, uAxis, vAxis, quadPos, w, h, sl, bl, texIdx);
 
-                        // Clear Mask
                         for (int l = 0; l < h; l++) {
                             for (int k = 0; k < w; k++) {
                                 mask[n + k + l * uMax] = null;
@@ -169,16 +176,13 @@ public class GreedyMesher {
         float[] v2 = new float[]{pos[0], pos[1], pos[2]};
         float[] v3 = new float[]{pos[0], pos[1], pos[2]};
 
-        // Offset to face plane if Positive Direction
         if (dir == Direction.EAST || dir == Direction.UP || dir == Direction.SOUTH) {
-             v0[dir.x!=0?0:(dir.y!=0?1:2)]++;
-             v1[dir.x!=0?0:(dir.y!=0?1:2)]++;
-             v2[dir.x!=0?0:(dir.y!=0?1:2)]++;
-             v3[dir.x!=0?0:(dir.y!=0?1:2)]++;
+             v0[dir.vec.minComponent()]++;
+             v1[dir.vec.minComponent()]++;
+             v2[dir.vec.minComponent()]++;
+             v3[dir.vec.minComponent()]++;
         }
 
-        // Expand along axes (passed explicitly now!)
-        // v0 is origin
         v1[uAxis] += w; 
         v2[uAxis] += w; v2[vAxis] += h;
         v3[vAxis] += h;
@@ -188,15 +192,9 @@ public class GreedyMesher {
         float sLight = sl / 15.0f;
         float bLight = bl / 15.0f;
 
-        // Winding Order Logic
-        // Derived from Axis Cross Products
-        // Standard (CCW): SOUTH, WEST, DOWN
-        // Inverted (CW): NORTH, EAST, UP
-        
         boolean inverted = (dir == Direction.NORTH || dir == Direction.EAST || dir == Direction.UP);
 
         if (inverted) {
-             // CW Winding (0 -> 3 -> 2 -> 0 -> 2 -> 1)
              addVert(b, v0, uMin, vMin, sLight, bLight, tid);
              addVert(b, v3, uMin, vMax, sLight, bLight, tid);
              addVert(b, v2, uMax, vMax, sLight, bLight, tid);
@@ -204,7 +202,6 @@ public class GreedyMesher {
              addVert(b, v2, uMax, vMax, sLight, bLight, tid);
              addVert(b, v1, uMax, vMin, sLight, bLight, tid);
         } else {
-             // CCW Winding (0 -> 1 -> 2 -> 0 -> 2 -> 3)
              addVert(b, v0, uMin, vMin, sLight, bLight, tid);
              addVert(b, v1, uMax, vMin, sLight, bLight, tid);
              addVert(b, v2, uMax, vMax, sLight, bLight, tid);

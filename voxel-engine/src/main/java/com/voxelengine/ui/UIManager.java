@@ -1,13 +1,17 @@
 package com.voxelengine.ui;
 
+import com.voxelengine.core.Input;
+import com.voxelengine.entity.EntityManager;
 import com.voxelengine.render.Mesh;
 import com.voxelengine.render.Shader;
 import com.voxelengine.render.TextureAtlas;
 import com.voxelengine.utils.Direction;
 import com.voxelengine.world.Block;
+import com.voxelengine.world.World;
 import org.joml.Matrix4f;
 import org.joml.Vector2f;
 import org.joml.Vector4f;
+import org.lwjgl.glfw.GLFW;
 import org.lwjgl.stb.STBImage;
 import org.lwjgl.system.MemoryStack;
 
@@ -26,21 +30,29 @@ public class UIManager {
     private final Mesh quadMesh;
     private final Matrix4f orthoProjection;
     
+    // Textures
     private int crosshairTexture;
-    private int hotbarTexture;
+    private int slotTexture;
     private int selectorTexture;
+    private int hotbarTexture; // FIXED: Variable was missing
     
     private final Inventory inventory;
     private final TextureAtlas textureAtlas;
-    private final FontRenderer fontRenderer; // NEW
+    private final FontRenderer fontRenderer;
+    private final CommandManager commandManager;
+    private final ContainerScreen containerScreen;
+    
+    // UI State
+    public boolean isChatOpen = false;
+    public boolean isInventoryOpen = false;
 
-    public UIManager(Inventory inventory, TextureAtlas textureAtlas) {
+    public UIManager(Inventory inventory, TextureAtlas textureAtlas, World world, EntityManager entityMgr) {
         this.inventory = inventory;
         this.textureAtlas = textureAtlas;
         this.shader = new Shader("assets/shaders/vertex.glsl", "assets/shaders/fragment.glsl");
-        
-        // Init Font Renderer
         this.fontRenderer = new FontRenderer(this.shader);
+        this.commandManager = new CommandManager(world, entityMgr, inventory);
+        this.containerScreen = new ContainerScreen(inventory, textureAtlas, fontRenderer);
         
         // Standard Quad (0..1 UVs)
         float[] vertices = new float[] {
@@ -60,8 +72,32 @@ public class UIManager {
     
     private void loadUITextures() {
         crosshairTexture = loadTexture("assets/ui/crosshair.png");
-        hotbarTexture = loadTexture("assets/ui/hotbar.png");
+        slotTexture = loadTexture("assets/ui/slot.png");
         selectorTexture = loadTexture("assets/ui/selector.png");
+        hotbarTexture = loadTexture("assets/ui/hotbar.png"); // FIXED: Load hotbar
+    }
+    
+    public void handleInput() {
+        if (isChatOpen) {
+            if (Input.isEnterPressed()) {
+                String cmd = Input.getTypedString();
+                commandManager.execute(cmd);
+                isChatOpen = false;
+                Input.stopTextInput();
+                Input.setCursorLocked(true);
+            }
+        } else {
+            if (Input.isKeyDown(GLFW.GLFW_KEY_SLASH)) { 
+                isChatOpen = true;
+                Input.startTextInput();
+                Input.setCursorLocked(false);
+            }
+        }
+    }
+    
+    public void toggleInventory() {
+        isInventoryOpen = !isInventoryOpen;
+        Input.setCursorLocked(!isInventoryOpen);
     }
 
     public void render(int windowWidth, int windowHeight) {
@@ -76,32 +112,67 @@ public class UIManager {
         shader.setUniform("uProjection", orthoProjection);
         shader.setUniform("uView", new Matrix4f());
         
-        float centerX = windowWidth / 2.0f;
-        float centerY = windowHeight / 2.0f;
+        // ------------------------------------------------
+        // 1. Full Screen Interfaces
+        // ------------------------------------------------
+        if (isInventoryOpen) {
+            containerScreen.render(shader, windowWidth, windowHeight, orthoProjection);
+        }
         
-        // ---------------------------------------------------------
+        // ------------------------------------------------
+        // 2. HUD (Hotbar, Crosshair)
+        // ------------------------------------------------
+        if (!isInventoryOpen) {
+            renderHUD(windowWidth, windowHeight);
+        }
+        
+        // ------------------------------------------------
+        // 3. Chat Overlay
+        // ------------------------------------------------
+        if (isChatOpen) {
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, slotTexture); 
+            shader.setUniform("uTexture", 0);
+            shader.setUniform("uUVScale", -1.0f);
+            shader.setUniform("uColorMod", new Vector4f(0,0,0,0.5f));
+            
+            Matrix4f chatBg = new Matrix4f().translate(windowWidth/2.0f, 20, 0).scale(windowWidth, 20, 1);
+            shader.setUniform("uModel", chatBg);
+            quadMesh.render();
+            
+            fontRenderer.drawText(Input.getTypedString(), 10, 15, 1.0f, orthoProjection);
+        }
+        
+        shader.unbind();
+        glDepthMask(true);
+        glEnable(GL_DEPTH_TEST);
+        glDisable(GL_BLEND);
+    }
+    
+    private void renderHUD(int w, int h) {
+        float centerX = w / 2.0f;
+        float centerY = h / 2.0f;
+        
         // 1. Crosshair
-        // ---------------------------------------------------------
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, crosshairTexture);
         shader.setUniform("uTexture", 0);
-        shader.setUniform("uUVScale", -1.0f); // Direct Mode
-        shader.setUniform("uColorMod", new Vector4f(1.0f, 1.0f, 1.0f, 1.0f)); 
+        shader.setUniform("uUVScale", -1.0f); // Direct Mode (Full Bright)
+        shader.setUniform("uColorMod", new Vector4f(1,1,1,1));
         
-        float chSize = 16.0f;
-        Matrix4f chModel = new Matrix4f().translate(centerX, windowHeight / 2.0f, 0).scale(chSize, chSize, 1);
-        shader.setUniform("uModel", chModel);
+        shader.setUniform("uModel", new Matrix4f().translate(centerX, centerY, 0).scale(16, 16, 1));
         quadMesh.render();
         
-        // ---------------------------------------------------------
         // 2. Hotbar Background
-        // ---------------------------------------------------------
         glBindTexture(GL_TEXTURE_2D, hotbarTexture);
         
         float scale = 2.0f; 
         float barWidth = 182 * scale;
         float barHeight = 22 * scale;
         float barY = 10 + (barHeight / 2.0f);
+        
+        // FIX: Ensure pure white color so it's fully lit
+        shader.setUniform("uColorMod", new Vector4f(1.0f, 1.0f, 1.0f, 1.0f)); 
         
         Matrix4f hotbarModel = new Matrix4f()
             .translate(centerX, barY, 0)
@@ -110,11 +181,11 @@ public class UIManager {
         shader.setUniform("uModel", hotbarModel);
         quadMesh.render();
 
-        // ---------------------------------------------------------
         // 3. Items (Icons)
-        // ---------------------------------------------------------
         glBindTexture(GL_TEXTURE_2D, textureAtlas.getTextureId());
         shader.setUniform("uUVScale", 1.0f / 16.0f); // Atlas Mode
+        // FIX: Full Brightness for items
+        shader.setUniform("uColorMod", new Vector4f(1.0f, 1.0f, 1.0f, 1.0f)); 
         
         float startX = centerX - (barWidth / 2.0f) + (3 * scale);
         float slotStride = 20 * scale;
@@ -141,13 +212,12 @@ public class UIManager {
                 quadMesh.render();
             }
         }
-
-        // ---------------------------------------------------------
+        
         // 4. Selector
-        // ---------------------------------------------------------
         glBindTexture(GL_TEXTURE_2D, selectorTexture);
         shader.setUniform("uUVScale", -1.0f); // Direct Mode
         shader.setUniform("uUVOffset", new Vector2f(0, 0));
+        shader.setUniform("uColorMod", new Vector4f(1.0f, 1.0f, 1.0f, 1.0f));
         
         int selected = inventory.getSelectedSlot();
         float selSize = 24 * scale;
@@ -160,31 +230,21 @@ public class UIManager {
         shader.setUniform("uModel", selModel);
         quadMesh.render();
         
-        // ---------------------------------------------------------
-        // 5. Stack Counts (Text)
-        // ---------------------------------------------------------
-        // We render this last so numbers appear on top of everything
+        // 5. Stack Counts
         for (int i = 0; i < 9; i++) {
             ItemStack stack = inventory.getStack(i);
             if (stack.getCount() > 1) {
                 String text = String.valueOf(stack.getCount());
-                
                 float itemSize = 16 * scale; 
-                // Position text at bottom-right of slot
                 float itemX = startX + (i * slotStride) + (itemSize / 2.0f);
-                // Adjust position slightly
-                float textX = itemX; 
-                float textY = itemY - (itemSize * 0.2f);
                 
-                // Render text with scale 1.0 (or smaller if needed)
+                // Bottom right corner
+                float textX = itemX + (itemSize * 0.1f); 
+                float textY = itemY - (itemSize * 0.25f);
+                
                 fontRenderer.drawText(text, textX, textY, 1.0f, orthoProjection);
             }
         }
-        
-        shader.unbind();
-        glDepthMask(true);
-        glEnable(GL_DEPTH_TEST);
-        glDisable(GL_BLEND);
     }
 
     private int loadTexture(String path) {
@@ -224,6 +284,7 @@ public class UIManager {
     public void cleanup() {
         shader.cleanup();
         quadMesh.cleanup();
-        fontRenderer.cleanup(); // Clean font mesh
+        fontRenderer.cleanup();
+        containerScreen.cleanup();
     }
 }

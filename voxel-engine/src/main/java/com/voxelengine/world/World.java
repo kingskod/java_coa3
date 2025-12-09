@@ -8,10 +8,12 @@ public class World {
     private final ChunkManager chunkManager;
     private final LightingEngine lightingEngine;
     private final LogicSystem logicSystem;
+    
+    private long time = 6000; // 6000 = Morning, 18000 = Night
 
     public World() {
         this.chunkManager = new ChunkManager(this);
-        this.logicSystem = new LogicSystem(this); // Init logic first
+        this.logicSystem = new LogicSystem(this);
         this.lightingEngine = new LightingEngine(this);
         
         this.chunkManager.setLighting(this.lightingEngine);
@@ -24,8 +26,19 @@ public class World {
         Chunk c = chunkManager.getChunk(x >> 4, z >> 4);
         return c.getBlockLocal(x & 15, y, z & 15);
     }
+    
+    public byte getMetadata(int x, int y, int z) {
+        if (y < 0 || y >= Chunk.HEIGHT) return 0;
+        if (!isLoaded(x, z)) return 0;
+        Chunk c = chunkManager.getChunk(x >> 4, z >> 4);
+        return c.getMetadata(x & 15, y, z & 15);
+    }
 
     public void setBlock(int x, int y, int z, Block block) {
+        setBlock(x, y, z, block, (byte)0);
+    }
+
+    public void setBlock(int x, int y, int z, Block block, byte meta) {
         if (y < 0 || y >= Chunk.HEIGHT) return;
         if (!isLoaded(x, z)) return;
         
@@ -33,15 +46,14 @@ public class World {
         int lx = x & 15;
         int lz = z & 15;
         
-        c.setBlock(lx, y, z & 15, block);
+        c.setBlock(lx, y, lz, block, meta);
         lightingEngine.updateBlock(x, y, z);
-        logicSystem.updateNetwork(x, y, z); // For Redstone
+        logicSystem.updateNetwork(x, y, z);
         
-        // Fluid Scheduling
         if (block.isWater()) {
             logicSystem.scheduleTick(x, y, z, block, 5);
         }
-        // Update neighbors (for flow into air)
+        
         checkNeighborTick(x + 1, y, z);
         checkNeighborTick(x - 1, y, z);
         checkNeighborTick(x, y, z + 1);
@@ -72,7 +84,16 @@ public class World {
     }
 
     public void tick() {
+        time = (time + 1) % 24000; // Cycle every 20 minutes
         logicSystem.tick();
+    }
+    
+    public void setTime(long time) {
+        this.time = time % 24000;
+    }
+    
+    public long getTime() {
+        return time;
     }
 
     public ChunkManager getChunkManager() { return chunkManager; }
@@ -96,8 +117,8 @@ public class World {
     public int getBlockLight(int x, int y, int z) {
         if (y < 0 || y >= Chunk.HEIGHT) return 0;
         if (!isLoaded(x, z)) return 0;
-        chunkManager.getChunk(x >> 4, z >> 4).getBlockLight(x & 15, y, z & 15);
-        return chunkManager.getChunk(x >> 4, z >> 4).getBlockLight(x & 15, y, z & 15);
+        Chunk c = chunkManager.getChunk(x >> 4, z >> 4);
+        return c.getBlockLight(x & 15, y, z & 15);
     }
     public void setBlockLight(int x, int y, int z, int val) {
         if (y < 0 || y >= Chunk.HEIGHT) return;

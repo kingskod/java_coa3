@@ -96,6 +96,41 @@ public class AssetGenerator {
             g.dispose();
             try { ImageIO.write(img, "png", selector); } catch (IOException e) {}
         }
+        File tabItems = dir.resolve("tab_items.png").toFile();
+        if (!tabItems.exists()) {
+            // Standard MC inventory size approx 176x166
+            BufferedImage img = new BufferedImage(176, 166, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D g = img.createGraphics();
+            
+            // Grey Background
+            g.setColor(new Color(198, 198, 198));
+            g.fillRect(0, 0, 176, 166);
+            
+            // Draw Borders
+            g.setColor(Color.WHITE);
+            g.drawRect(0, 0, 175, 165);
+            
+            // Draw Slot Placeholders (3 rows of 9)
+            g.setColor(new Color(139, 139, 139));
+            int startX = 7;
+            int startY = 17; // Top Grid
+            
+            // Main Inventory
+            for(int row=0; row<3; row++) {
+                for(int col=0; col<9; col++) {
+                    g.drawRect(startX + col * 18, startY + row * 18, 16, 16);
+                }
+            }
+            
+            // Hotbar
+            int hotbarY = 141;
+            for(int col=0; col<9; col++) {
+                g.drawRect(startX + col * 18, hotbarY, 16, 16);
+            }
+            
+            g.dispose();
+            try { ImageIO.write(img, "png", tabItems); } catch (IOException e) {}
+        }
     }
 
     private static void generateSounds(Path dir) {

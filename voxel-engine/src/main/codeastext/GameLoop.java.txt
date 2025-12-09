@@ -9,9 +9,6 @@ import com.voxelengine.world.World;
 public class GameLoop {
 
     private final Window window;
-    // These will be fully implemented in later batches, instantiated here to allow compilation if needed later
-    // For now, Main will manually handle linking them.
-
     private static final int TPS = 60;
     private static final float TICK_DURATION = 1.0f / TPS;
 
