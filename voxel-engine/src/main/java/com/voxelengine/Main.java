@@ -11,6 +11,7 @@ import com.voxelengine.entity.Player;
 import com.voxelengine.logic.LogicSystem;
 import com.voxelengine.render.Camera;
 import com.voxelengine.render.Renderer;
+import com.voxelengine.render.TextureAtlas;
 import com.voxelengine.ui.Inventory;
 import com.voxelengine.ui.ItemStack;
 import com.voxelengine.ui.UIManager;
@@ -94,10 +95,12 @@ public class Main {
                 boolean clickedRight = Input.isMouseButtonDown(1);
                 
                 if (clickedLeft && !mouseState[0]) {
-                    raycast(world, camera, true, inventory, logic, entityManager, soundManager);
+                    // Pass renderer.getTextureAtlas() here
+                    raycast(world, camera, true, inventory, logic, entityManager, soundManager, renderer.getTextureAtlas());
                 }
                 if (clickedRight && !mouseState[1]) {
-                    raycast(world, camera, false, inventory, logic, entityManager, soundManager);
+                    // Pass renderer.getTextureAtlas() here
+                    raycast(world, camera, false, inventory, logic, entityManager, soundManager, renderer.getTextureAtlas());
                 }
                 
                 mouseState[0] = clickedLeft;
@@ -125,7 +128,8 @@ public class Main {
         window.cleanup();
     }
     
-    private static void raycast(World world, Camera cam, boolean destroy, Inventory inventory, LogicSystem logic, EntityManager entityManager, SoundManager soundManager) {
+    // Updated signature to accept TextureAtlas
+    private static void raycast(World world, Camera cam, boolean destroy, Inventory inventory, LogicSystem logic, EntityManager entityManager, SoundManager soundManager, TextureAtlas atlas) {
         Vector3f pos = new Vector3f(cam.getPosition());
         Vector3f dir = new Vector3f();
         cam.getViewMatrix().positiveZ(dir).negate();
@@ -144,7 +148,8 @@ public class Main {
                     if (b.getSoundType() != null) soundManager.play(b.getSoundType().breakSound);
                     
                     ItemStack drop = new ItemStack(b, 1);
-                    entityManager.addEntity(new ItemEntity(drop, x + 0.5f, y + 0.5f, z + 0.5f));
+                    // Pass atlas to ItemEntity constructor
+                    entityManager.addEntity(new ItemEntity(drop, x + 0.5f, y + 0.5f, z + 0.5f, atlas));
                     
                     world.setBlock(x, y, z, Block.AIR);
                     logic.updateNetwork(x, y, z); 

@@ -4,8 +4,6 @@ import com.voxelengine.utils.Direction;
 import com.voxelengine.world.Block;
 import com.voxelengine.world.Chunk;
 import com.voxelengine.world.World;
-
-// We use GreedyMesher's FloatList to share the buffer logic
 import com.voxelengine.render.GreedyMesher.FloatList;
 
 public class ModelMesher {
@@ -29,33 +27,197 @@ public class ModelMesher {
                     
                     if (block.isWater()) {
                         renderFluid(block, x, y, z, chunk, world, atlas, buffer, sl, bl);
-                    } else if (block == Block.REDSTONE_TORCH) {
+                    } else if (block == Block.REDSTONE_TORCH || block == Block.REDSTONE_TORCH_OFF) {
                         renderTorch(block, x, y, z, atlas, buffer, sl, bl);
+                    } else if (block == Block.WIRE) {
+                        renderWire(x, y, z, chunk, world, atlas, buffer, sl, bl);
+                    } else if (block.isLogicGate()) {
+                        renderGate(block, x, y, z, chunk, atlas, buffer, sl, bl);
                     } else {
-                        // Default fallback for wires/levers (Small Box centered in block)
-                        // FIX: Add offsets to x,y,z directly instead of passing x,y,z as separate args
-                        renderBox(block, 
-                                  x + 0.2f, y + 0.0f, z + 0.2f,   // Min
-                                  x + 0.8f, y + 0.2f, z + 0.8f,   // Max
-                                  atlas, buffer, sl, bl);
+                        // Fallback generic box
+                        renderPart(3, 3, 3, 13, 13, 13, block.name().toLowerCase(), x, y, z, chunk, atlas, buffer, sl, bl);
                     }
                 }
             }
         }
     }
 
+    // =================================================================
+    //  LOGIC GATE RENDERER (Based on your JSONs)
+    // =================================================================
+    
+    private void renderGate(Block block, int x, int y, int z, Chunk chunk, TextureAtlas atlas, FloatList buffer, int sl, int bl) {
+        // 1. Base Plate (Common to all gates)
+        // 0,0,0 -> 16,2,16 (Smooth Stone)
+        renderPart(0, 0, 0, 16, 2, 16, "smooth_stone", x, y, z, chunk, atlas, buffer, sl, bl);
+        
+        // 2. Top Symbol (Decal)
+        // We render this slightly higher (y=2.01) to avoid z-fighting with the base
+        String texture = block.name().toLowerCase();
+        if (block.isActive(chunk.getMetadata(x, y, z))) {
+            texture += "_on";
+        }
+        renderPart(0, 2.01f, 0, 16, 2.01f, 16, texture, x, y, z, chunk, atlas, buffer, sl, bl);
+
+        // 3. Specific 3D Details (Torches from JSON)
+        // Note: I merged some duplicates from your JSON list for performance
+        
+        if (block == Block.NAND_GATE) {
+            // Torches for NAND
+            renderPart(7.0f, 2.0f, 2.0f, 9.0f, 6.0f, 4.0f, "redstone_torch", x, y, z, chunk, atlas, buffer, sl, bl);
+            renderPart(6.0f, 2.0f, 1.9f, 10.0f, 6.0f, 4.1f, "redstone_torch", x, y, z, chunk, atlas, buffer, sl, bl);
+        } 
+        else if (block == Block.NOT_GATE) {
+            // Torches for NOT
+            renderPart(7.0f, 2.0f, 2.0f, 9.0f, 6.0f, 4.0f, "redstone_torch", x, y, z, chunk, atlas, buffer, sl, bl);
+            renderPart(6.0f, 2.0f, 1.9f, 10.0f, 6.0f, 4.1f, "redstone_torch", x, y, z, chunk, atlas, buffer, sl, bl);
+        }
+        // OR, XOR, AND, LATCH usually just rely on the Top Symbol texture in simplified models, 
+        // but you can add more 'renderPart' calls here if you have specific JSON geometry for them.
+    }
+
+    // =================================================================
+    //  CORE HELPERS
+    // =================================================================
+
+    /**
+     * Renders a box using Minecraft JSON coordinates (0-16).
+     * Handles Metadata Rotation automatically.
+     */
+    private void renderPart(float fromX, float fromY, float fromZ, 
+                            float toX, float toY, float toZ, 
+                            String texture, int x, int y, int z, 
+                            Chunk chunk, TextureAtlas atlas, FloatList buffer, int sl, int bl) {
+        
+        // 1. Normalize 0-16 to 0.0-1.0
+        float minX = fromX / 16.0f;
+        float minY = fromY / 16.0f;
+        float minZ = fromZ / 16.0f;
+        float maxX = toX / 16.0f;
+        float maxY = toY / 16.0f;
+        float maxZ = toZ / 16.0f;
+
+        // 2. Get Rotation from Metadata
+        byte meta = chunk.getMetadata(x, y, z);
+        int rotation = meta & 3; // 0=South, 1=West, 2=North, 3=East
+        
+        // 3. Rotate the Box (Pivot 0.5, 0.5)
+        float rMinX = minX, rMinZ = minZ, rMaxX = maxX, rMaxZ = maxZ;
+        
+        for (int i = 0; i < rotation; i++) {
+            // Rotate 90 deg clockwise
+            float oldMinX = rMinX;
+            float oldMaxX = rMaxX;
+            
+            // X becomes inverted Z
+            rMinX = 1.0f - rMaxZ;
+            rMaxX = 1.0f - rMinZ;
+            
+            // Z becomes X
+            rMinZ = oldMinX;
+            rMaxZ = oldMaxX;
+        }
+
+        // 4. Render
+        float texIdx = atlas.getIndex(texture, Direction.UP);
+        
+        // Handle flattened boxes (Decals)
+        if (minY == maxY) {
+            // Render just the top quad to avoid z-fighting side artifacts on decals
+            addQuad(buffer, x + rMinX, y + maxY, z + rMinZ, x + rMaxX, y + maxY, z + rMaxZ, 0,0,1,1, Direction.UP, sl, bl, texIdx);
+        } else {
+            // Render full box
+            renderBox(null, 
+                      x + rMinX, y + minY, z + rMinZ, 
+                      x + rMaxX, y + maxY, z + rMaxZ, 
+                      atlas, buffer, sl, bl, texIdx);
+        }
+    }
+
+    private void renderBox(Block ignored, float x0, float y0, float z0, float x1, float y1, float z1, 
+                           TextureAtlas atlas, FloatList buffer, int sl, int bl, float texIdx) {
+        addQuad(buffer, x0, y0, z1, x1, y1, z1, 0,0,1,1, Direction.SOUTH, sl, bl, texIdx);
+        addQuad(buffer, x1, y0, z0, x0, y1, z0, 0,0,1,1, Direction.NORTH, sl, bl, texIdx);
+        addQuad(buffer, x0, y0, z0, x0, y1, z1, 0,0,1,1, Direction.WEST, sl, bl, texIdx);
+        addQuad(buffer, x1, y0, z1, x1, y1, z0, 0,0,1,1, Direction.EAST, sl, bl, texIdx);
+        addQuad(buffer, x0, y1, z0, x1, y1, z1, 0,0,1,1, Direction.UP, sl, bl, texIdx);
+        addQuad(buffer, x0, y0, z0, x1, y0, z1, 0,0,1,1, Direction.DOWN, sl, bl, texIdx);
+    }
+
+    // =================================================================
+    //  REDSTONE WIRE RENDERER (Vertical Support)
+    // =================================================================
+
+    private void renderWire(int x, int y, int z, Chunk chunk, World world, TextureAtlas atlas, FloatList buffer, int sl, int bl) {
+        float texIdx = atlas.getIndex("wire", Direction.UP);
+        
+        // Center Dot (Always present)
+        addQuad(buffer, x, y+0.01f, z, x+1, y+0.01f, z+1, 0,0,1,1, Direction.UP, sl, bl, texIdx);
+        
+        // Check Neighbors
+        checkWireConnection(x, y, z, -1, 0, Direction.WEST, chunk, world, atlas, buffer, sl, bl, texIdx);
+        checkWireConnection(x, y, z, 1, 0, Direction.EAST, chunk, world, atlas, buffer, sl, bl, texIdx);
+        checkWireConnection(x, y, z, 0, -1, Direction.NORTH, chunk, world, atlas, buffer, sl, bl, texIdx);
+        checkWireConnection(x, y, z, 0, 1, Direction.SOUTH, chunk, world, atlas, buffer, sl, bl, texIdx);
+    }
+    
+    private void checkWireConnection(int x, int y, int z, int dx, int dz, Direction dir, 
+                                     Chunk chunk, World world, TextureAtlas atlas, FloatList buffer, int sl, int bl, float tid) {
+        // 1. Same Level (Connect to wire or gate)
+        Block same = getNeighbor(chunk, world, x + dx, y, z + dz);
+        if (same == Block.WIRE || same.isLogicGate()) {
+            // Render Flat Arm
+            // We use simple quads to fill the gap to the edge
+            // Logic: Expand center dot towards direction
+            float x0=x, z0=z, x1=x+1, z1=z+1;
+            if (dir == Direction.NORTH) z0 = z - 1; // Visual extension handled by just rendering 0-1 range on specific axis?
+            // Actually, we should just render the specific arm.
+            // Simplified: Draw a quad from center to edge.
+            // Center is 0.5. Edge is 0.0 or 1.0.
+            // Keeping it simple: Draw the full block floor for now, or use specific UVs for lines in a polish pass.
+            // Current 'Center Dot' covers the whole block floor.
+            return;
+        }
+        
+        // 2. Vertical (Climbing)
+        // If block at side is Solid AND block above it is Wire
+        Block side = getNeighbor(chunk, world, x + dx, y, z + dz);
+        Block up = getNeighbor(chunk, world, x + dx, y + 1, z + dz);
+        
+        if (side.isSolid() && up == Block.WIRE) {
+            // Render Vertical Quad against the wall
+            if (dir == Direction.NORTH) { // Wall is at Z-1
+                // Quad on South face of neighbor (Z=0 plane relative to us)
+                addQuad(buffer, x, y, z, x+1, y+1, z, 0,0,1,1, Direction.SOUTH, sl, bl, tid);
+            } else if (dir == Direction.SOUTH) { // Wall is at Z+1
+                addQuad(buffer, x+1, y, z+1, x, y+1, z+1, 0,0,1,1, Direction.NORTH, sl, bl, tid);
+            } else if (dir == Direction.EAST) { // Wall is at X+1
+                addQuad(buffer, x+1, y, z, x+1, y+1, z+1, 0,0,1,1, Direction.WEST, sl, bl, tid);
+            } else if (dir == Direction.WEST) { // Wall is at X-1
+                addQuad(buffer, x, y, z+1, x, y+1, z, 0,0,1,1, Direction.EAST, sl, bl, tid);
+            }
+        }
+    }
+
+    // =================================================================
+    //  FLUID & TORCH
+    // =================================================================
+
+    private void renderTorch(Block block, int x, int y, int z, TextureAtlas atlas, FloatList buffer, int sl, int bl) {
+        float texIdx = atlas.getIndex("redstone_torch", Direction.UP);
+        // Stick shape
+        renderBox(null, x + 0.4375f, y, z + 0.4375f, x + 0.5625f, y + 0.6f, z + 0.5625f, atlas, buffer, sl, bl, texIdx);
+    }
+
     private void renderFluid(Block block, int x, int y, int z, Chunk chunk, World world, TextureAtlas atlas, FloatList buffer, int sl, int bl) {
         float height = getFluidHeight(block);
         float texIdx = atlas.getIndex("water", Direction.UP); 
         
-        // Top Face
         Block above = getNeighbor(chunk, world, x, y + 1, z);
         if (!above.isWater()) {
-            addQuad(buffer, x, y + height, z, x + 1, y + height, z + 1, 
-                    0, 0, 1, 1, Direction.UP, sl, bl, texIdx);
+            addQuad(buffer, x, y + height, z, x + 1, y + height, z + 1, 0, 0, 1, 1, Direction.UP, sl, bl, texIdx);
         }
         
-        // Side Faces
         renderFluidFace(x, y, z, -1, 0, 0, Direction.WEST, height, chunk, world, atlas, buffer, sl, bl);
         renderFluidFace(x, y, z, 1, 0, 0, Direction.EAST, height, chunk, world, atlas, buffer, sl, bl);
         renderFluidFace(x, y, z, 0, 0, -1, Direction.NORTH, height, chunk, world, atlas, buffer, sl, bl);
@@ -66,7 +228,6 @@ public class ModelMesher {
     private void renderFluidFace(int x, int y, int z, int dx, int dy, int dz, Direction dir, float h, 
                                  Chunk chunk, World world, TextureAtlas atlas, FloatList buffer, int sl, int bl) {
         Block neighbor = getNeighbor(chunk, world, x + dx, y + dy, z + dz);
-        
         if (neighbor == Block.AIR || (!neighbor.isWater() && neighbor.isTransparent())) {
             float texIdx = atlas.getIndex("water", dir);
             
@@ -80,74 +241,34 @@ public class ModelMesher {
         }
     }
 
-    private void renderTorch(Block block, int x, int y, int z, TextureAtlas atlas, FloatList buffer, int sl, int bl) {
-        // Torch centered
-        renderBox(block, x + 0.4375f, y, z + 0.4375f, x + 0.5625f, y + 0.6f, z + 0.5625f, atlas, buffer, sl, bl);
-    }
-
-    private void renderBox(Block block, float x0, float y0, float z0, float x1, float y1, float z1, 
-                           TextureAtlas atlas, FloatList buffer, int sl, int bl) {
-        float texIdx = atlas.getIndex(block.name().toLowerCase(), Direction.UP);
-        
-        addQuad(buffer, x0, y0, z1, x1, y1, z1, 0,0,1,1, Direction.SOUTH, sl, bl, texIdx);
-        addQuad(buffer, x1, y0, z0, x0, y1, z0, 0,0,1,1, Direction.NORTH, sl, bl, texIdx);
-        addQuad(buffer, x0, y0, z0, x0, y1, z1, 0,0,1,1, Direction.WEST, sl, bl, texIdx);
-        addQuad(buffer, x1, y0, z1, x1, y1, z0, 0,0,1,1, Direction.EAST, sl, bl, texIdx);
-        addQuad(buffer, x0, y1, z0, x1, y1, z1, 0,0,1,1, Direction.UP, sl, bl, texIdx);
-        addQuad(buffer, x0, y0, z0, x1, y0, z1, 0,0,1,1, Direction.DOWN, sl, bl, texIdx);
-    }
-
     private void addQuad(FloatList b, float x0, float y0, float z0, float x1, float y1, float z1, 
                          float u0, float v0, float u1, float v1, Direction dir, int sl, int bl, float tid) {
         
         float sLight = sl / 15.0f;
         float bLight = bl / 15.0f;
-        
         boolean inverted = (dir == Direction.NORTH || dir == Direction.EAST || dir == Direction.UP);
         
         float[][] v = new float[4][3];
         
         if (dir == Direction.UP || dir == Direction.DOWN) {
-            v[0] = new float[]{x0, y0, z0};
-            v[1] = new float[]{x1, y0, z0};
-            v[2] = new float[]{x1, y0, z1};
-            v[3] = new float[]{x0, y0, z1};
+            v[0] = new float[]{x0, y0, z0}; v[1] = new float[]{x1, y0, z0}; v[2] = new float[]{x1, y0, z1}; v[3] = new float[]{x0, y0, z1};
         } else if (dir == Direction.NORTH || dir == Direction.SOUTH) {
-            v[0] = new float[]{x0, y0, z0};
-            v[1] = new float[]{x1, y0, z0};
-            v[2] = new float[]{x1, y1, z1};
-            v[3] = new float[]{x0, y1, z1};
-        } else { // East/West
-            v[0] = new float[]{x0, y0, z0};
-            v[1] = new float[]{x0, y0, z1};
-            v[2] = new float[]{x1, y1, z1};
-            v[3] = new float[]{x1, y1, z0};
+            v[0] = new float[]{x0, y0, z0}; v[1] = new float[]{x1, y0, z0}; v[2] = new float[]{x1, y1, z1}; v[3] = new float[]{x0, y1, z1};
+        } else { 
+            v[0] = new float[]{x0, y0, z0}; v[1] = new float[]{x0, y0, z1}; v[2] = new float[]{x1, y1, z1}; v[3] = new float[]{x1, y1, z0};
         }
         
         if (inverted) {
-             addVert(b, v[0], u0, v0, sLight, bLight, tid);
-             addVert(b, v[3], u0, v1, sLight, bLight, tid);
-             addVert(b, v[2], u1, v1, sLight, bLight, tid);
-             
-             addVert(b, v[0], u0, v0, sLight, bLight, tid);
-             addVert(b, v[2], u1, v1, sLight, bLight, tid);
-             addVert(b, v[1], u1, v0, sLight, bLight, tid);
+             addVert(b, v[0], u0, v0, sLight, bLight, tid); addVert(b, v[3], u0, v1, sLight, bLight, tid); addVert(b, v[2], u1, v1, sLight, bLight, tid);
+             addVert(b, v[0], u0, v0, sLight, bLight, tid); addVert(b, v[2], u1, v1, sLight, bLight, tid); addVert(b, v[1], u1, v0, sLight, bLight, tid);
         } else {
-             addVert(b, v[0], u0, v0, sLight, bLight, tid);
-             addVert(b, v[1], u1, v0, sLight, bLight, tid);
-             addVert(b, v[2], u1, v1, sLight, bLight, tid);
-             
-             addVert(b, v[0], u0, v0, sLight, bLight, tid);
-             addVert(b, v[2], u1, v1, sLight, bLight, tid);
-             addVert(b, v[3], u0, v1, sLight, bLight, tid);
+             addVert(b, v[0], u0, v0, sLight, bLight, tid); addVert(b, v[1], u1, v0, sLight, bLight, tid); addVert(b, v[2], u1, v1, sLight, bLight, tid);
+             addVert(b, v[0], u0, v0, sLight, bLight, tid); addVert(b, v[2], u1, v1, sLight, bLight, tid); addVert(b, v[3], u0, v1, sLight, bLight, tid);
         }
     }
 
     private void addVert(FloatList b, float[] p, float u, float v, float sl, float bl, float tid) {
-        b.add(p[0]); b.add(p[1]); b.add(p[2]);
-        b.add(u); b.add(v);
-        b.add(sl); b.add(bl);
-        b.add(tid);
+        b.add(p[0]); b.add(p[1]); b.add(p[2]); b.add(u); b.add(v); b.add(sl); b.add(bl); b.add(tid);
     }
 
     private float getFluidHeight(Block b) {

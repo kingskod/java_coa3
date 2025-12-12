@@ -136,6 +136,15 @@ public class GreedyMesher {
 
                         float texIdx = atlas.getIndex(type.name().toLowerCase(), dir);
                         // Cutout blocks (Leaves/Glass) must write to depth, so use Opaque buffer
+                        // ANTI-TESSELLATION FEATURE:
+                        // If block is Grass, Sand, or Stone, and we are looking at the TOP face (UP),
+                        // Mark it for random rotation by making the index negative.
+                        if (dir == Direction.UP && 
+                           (type == Block.GRASS || type == Block.SAND || type == Block.STONE || type == Block.DIRT)) {
+                            // We use -1.0 as an offset so index 0 becomes -1.0, index 5 becomes -6.0
+                            texIdx = -(texIdx + 1.0f);
+                        }
+
                         FloatList buffer = (type.isWater() || type.isTransparent()) ? transparentBuffer : opaqueBuffer;
                         if (type == Block.LEAVES || type == Block.GLASS) buffer = opaqueBuffer;
 

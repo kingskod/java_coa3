@@ -32,6 +32,20 @@ public class World {
         Chunk c = chunkManager.getChunk(x >> 4, z >> 4);
         return c.getMetadata(x & 15, y, z & 15);
     }
+    public void setMetadata(int x, int y, int z, byte meta) {
+        if (y < 0 || y >= Chunk.HEIGHT) return;
+        if (!isLoaded(x, z)) return;
+        
+        Chunk c = chunkManager.getChunk(x >> 4, z >> 4);
+        // Delegate to chunk
+        c.setMetadata(x & 15, y, z & 15, meta);
+        
+        // Mark chunk as dirty so it saves and re-meshes (visual update)
+        c.isDirty = true;
+        
+        // Optional: Trigger a logic update if metadata changes state
+        logicSystem.updateNetwork(x, y, z);
+    }
 
     public void setBlock(int x, int y, int z, Block block) {
         setBlock(x, y, z, block, (byte)0);

@@ -83,11 +83,29 @@ public class TextureAtlas {
 
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
-                int pixel = pixels[y * width + x]; // Standard order
-                buffer.put((byte) ((pixel >> 16) & 0xFF)); // R
-                buffer.put((byte) ((pixel >> 8) & 0xFF));  // G
-                buffer.put((byte) (pixel & 0xFF));         // B
-                buffer.put((byte) ((pixel >> 24) & 0xFF)); // A
+                int pixel = pixels[y * width + x];
+                
+                int r = (pixel >> 16) & 0xFF;
+                int g = (pixel >> 8) & 0xFF;
+                int b = (pixel & 0xFF);
+                int a = (pixel >> 24) & 0xFF;
+
+                // BUG FIX: Force Water Transparency
+                // If we detect the "water" texture slot (this assumes water is somewhat blue)
+                // A better way is matching the texture index during build, but checking color is a robust hack for now.
+                // Or better: Logic in the build loop. 
+                // Since this method just uploads raw pixels, let's check transparency.
+                
+                // If alpha is full (255) but it looks like water (blue > red+green), make it see-through
+                // (Simple heuristic since we don't have the filename here)
+                if (a == 255 && b > r + g) {
+                    a = 160; // 60% opacity
+                }
+
+                buffer.put((byte) r);
+                buffer.put((byte) g);
+                buffer.put((byte) b);
+                buffer.put((byte) a);
             }
         }
         buffer.flip();
