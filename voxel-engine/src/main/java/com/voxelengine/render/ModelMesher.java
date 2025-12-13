@@ -23,34 +23,36 @@ public class ModelMesher {
                     Block block = chunk.getBlockLocal(x, y, z);
                     if (block == Block.AIR || block.isFullCube()) continue;
 
-                    // Calculate Light
                     int sl = chunk.getSkyLight(x, y, z);
                     int bl = chunk.getBlockLight(x, y, z);
 
-                    // Choose Buffer
                     FloatList buffer = block.isTransparent() || block.isWater() ? targetTransparent : targetOpaque;
                     
+                    // 1. Water
                     if (block.isWater()) {
                         renderFluid(block, x, y, z, chunk, world, atlas, buffer, sl, bl);
-                    } else if (block == Block.WIRE) {
+                        continue;
+                    } 
+                    
+                    // 2. Wires
+                    if (block == Block.WIRE) {
                         renderWire(x, y, z, chunk, world, atlas, buffer, sl, bl);
-                    } else if (block.isLogicGate()|| block==Block.LEVER) {
-                        BlockModel model = BlockModels.get(block);
-                        if (model != null) {
-                            model.render(x, y, z, chunk, atlas, buffer, sl, bl, block);
-                        } else {
-                            // Fallback if model missing
-                            renderBox(block, x + 0.1f, y, z + 0.1f, x + 0.9f, y + 0.2f, z + 0.9f, atlas, buffer, sl, bl);
-                        }
+                        continue;
+                    }
+
+                    // 3. Block Models (Gates, Torches, Levers)
+                    // This handles EVERYTHING defined in BlockModels.java
+                    BlockModel model = BlockModels.get(block);
+                    if (model != null) {
+                        model.render(x, y, z, chunk, atlas, buffer, sl, bl, block);
                     } else {
-                        // Default fallback (e.g. Levers not yet modeled)
+                        // 4. Fallback (Small Box)
                         renderBox(block, x + 0.2f, y + 0.0f, z + 0.2f, x + 0.8f, y + 0.2f, z + 0.8f, atlas, buffer, sl, bl);
                     }
                 }
             }
         }
     }
-
     // =================================================================
     //  RENDER BOX HELPERS
     // =================================================================
@@ -66,21 +68,6 @@ public class ModelMesher {
     private void renderBox(Block ignored, float x0, float y0, float z0, float x1, float y1, float z1, 
                            TextureAtlas atlas, FloatList buffer, int sl, int bl, float texIdx) {
         
-        // BOX MAPPING LOGIC:
-        // Instead of 0..1 for every face, we use the local coordinates (relative to block).
-        // This ensures a 2-pixel wide stick only grabs 2 pixels of the texture.
-        
-        // We need local coordinates (0..1) for UVs.
-        // Since x0, y0, etc are World Coordinates (e.g., 5.4, 60.0), we need to extract the fraction.
-        // However, renderPart passes coordinates that are ALREADY relative to the block anchor + rotation.
-        // Wait, 'generate' passes World Coordinates (x,y,z integers + float offsets).
-        
-        // We can extract local UVs by taking modulo 1.0, OR simpler:
-        // Just pass the float coordinates as UVs. The Shader's "fract()" will handle the wrapping for us!
-        // This is the beauty of the shader fix we did earlier.
-        
-        // UP (Y+)
-        // U: X direction, V: Z direction
         addQuad(buffer, x0, y1, z0, x1, y1, z1, x0, z0, x1, z1, Direction.UP, sl, bl, texIdx);
 
         // DOWN (Y-)
@@ -110,7 +97,7 @@ public class ModelMesher {
     // =================================================================
 
     private void renderWire(int x, int y, int z, Chunk chunk, World world, TextureAtlas atlas, FloatList buffer, int sl, int bl) {
-        float texIdx = atlas.getIndex("wire", Direction.UP);
+        float texIdx = atlas.getIndex("wire_off", Direction.UP);
         
         // Center Dot
         addQuad(buffer, x, y+0.01f, z, x+1, y+0.01f, z+1, 0,0,1,1, Direction.UP, sl, bl, texIdx);

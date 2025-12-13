@@ -66,6 +66,15 @@ public class AssetGenerator {
         createSolidTexture(dir, "xor_gate_on.png", new Color(200, 50, 255));
         createSolidTexture(dir, "nand_gate_on.png", new Color(150, 150, 0));
         createSolidTexture(dir, "not_gate_on.png", new Color(255, 100, 100));
+        createSolidTexture(dir, "smooth_stone.png", new Color(180, 180, 180));
+        createSolidTexture(dir, "redstone_dust.png", new Color(200, 0, 0));
+        createSolidTexture(dir, "and_gate_item.png", new Color(0, 100, 200));
+        createSolidTexture(dir, "or_gate_item.png", new Color(0, 200, 100));
+        createSolidTexture(dir, "xor_gate_item.png", new Color(150, 0, 200));
+        createSolidTexture(dir, "nand_gate_item.png", new Color(100, 100, 0));
+        createSolidTexture(dir, "not_gate_item.png", new Color(200, 50, 50));
+        createSolidTexture(dir, "sr_latch_item.png", new Color(200, 200, 200));
+        createSolidTexture(dir, "water_bucket.png", new Color(0, 0, 255));
     }
 
     private static void createSolidTexture(Path dir, String name, Color color) {

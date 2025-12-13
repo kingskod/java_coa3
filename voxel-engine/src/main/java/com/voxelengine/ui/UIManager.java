@@ -222,14 +222,16 @@ public class UIManager {
             Block item = stack.getBlock();
             
             if (item != Block.AIR) {
-                // Use SOUTH face for icon
-                int index = textureAtlas.getIndex(item.name().toLowerCase(), Direction.SOUTH);
+                String iconName = item.getItemIcon();
+                if (iconName == null) iconName = item.name().toLowerCase();
+                
+                int index = textureAtlas.getIndex(iconName, Direction.SOUTH);
                 float col = index % 16;
                 float row = index / 16;
                 shader.setUniform("uUVOffset", new Vector2f(col / 16.0f, row / 16.0f));
                 
-                float itemSize = 16 * scale * 0.7f; // Slightly smaller to fit
-                float itemX = startX + (i * slotStride) + (20*scale/2.0f); // Center in slot
+                float itemSize = 16 * scale * 0.7f; 
+                float itemX = startX + (i * slotStride) + (20*scale/2.0f); 
                 
                 Matrix4f iconModel = new Matrix4f()
                     .translate(itemX, itemY, 0)

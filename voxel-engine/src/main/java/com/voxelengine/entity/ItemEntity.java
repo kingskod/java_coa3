@@ -31,7 +31,7 @@ public class ItemEntity extends Entity {
         float[] v = new float[288]; // 6 faces * 6 verts * 8 floats
         int i = 0;
         float l = 1.0f; // Full Bright
-        float s = 0.25f; // Size (radius)
+        float s = 0.2f; // Size (radius)
         
         // Generate 6 faces with correct textures
         i = addFace(v, i, Direction.NORTH, atlas.getIndex(name, Direction.NORTH), s, l);
