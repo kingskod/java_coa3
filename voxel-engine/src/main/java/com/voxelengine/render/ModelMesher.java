@@ -8,6 +8,11 @@ import com.voxelengine.render.GreedyMesher.FloatList;
 
 public class ModelMesher {
 
+    // Initialize models once
+    static {
+        BlockModels.init();
+    }
+
     public void generate(Chunk chunk, World world, TextureAtlas atlas, 
                          FloatList targetOpaque, 
                          FloatList targetTransparent) {
@@ -27,15 +32,19 @@ public class ModelMesher {
                     
                     if (block.isWater()) {
                         renderFluid(block, x, y, z, chunk, world, atlas, buffer, sl, bl);
-                    } else if (block == Block.REDSTONE_TORCH || block == Block.REDSTONE_TORCH_OFF) {
-                        renderTorch(block, x, y, z, atlas, buffer, sl, bl);
                     } else if (block == Block.WIRE) {
                         renderWire(x, y, z, chunk, world, atlas, buffer, sl, bl);
-                    } else if (block.isLogicGate()) {
-                        renderGate(block, x, y, z, chunk, atlas, buffer, sl, bl);
+                    } else if (block.isLogicGate()|| block==Block.LEVER) {
+                        BlockModel model = BlockModels.get(block);
+                        if (model != null) {
+                            model.render(x, y, z, chunk, atlas, buffer, sl, bl, block);
+                        } else {
+                            // Fallback if model missing
+                            renderBox(block, x + 0.1f, y, z + 0.1f, x + 0.9f, y + 0.2f, z + 0.9f, atlas, buffer, sl, bl);
+                        }
                     } else {
-                        // Fallback generic box
-                        renderPart(3, 3, 3, 13, 13, 13, block.name().toLowerCase(), x, y, z, chunk, atlas, buffer, sl, bl);
+                        // Default fallback (e.g. Levers not yet modeled)
+                        renderBox(block, x + 0.2f, y + 0.0f, z + 0.2f, x + 0.8f, y + 0.2f, z + 0.8f, atlas, buffer, sl, bl);
                     }
                 }
             }
@@ -43,115 +52,67 @@ public class ModelMesher {
     }
 
     // =================================================================
-    //  LOGIC GATE RENDERER (Based on your JSONs)
+    //  RENDER BOX HELPERS
     // =================================================================
-    
-    private void renderGate(Block block, int x, int y, int z, Chunk chunk, TextureAtlas atlas, FloatList buffer, int sl, int bl) {
-        // 1. Base Plate (Common to all gates)
-        // 0,0,0 -> 16,2,16 (Smooth Stone)
-        renderPart(0, 0, 0, 16, 2, 16, "smooth_stone", x, y, z, chunk, atlas, buffer, sl, bl);
-        
-        // 2. Top Symbol (Decal)
-        // We render this slightly higher (y=2.01) to avoid z-fighting with the base
-        String texture = block.name().toLowerCase();
-        if (block.isActive(chunk.getMetadata(x, y, z))) {
-            texture += "_on";
-        }
-        renderPart(0, 2.01f, 0, 16, 2.01f, 16, texture, x, y, z, chunk, atlas, buffer, sl, bl);
 
-        // 3. Specific 3D Details (Torches from JSON)
-        // Note: I merged some duplicates from your JSON list for performance
-        
-        if (block == Block.NAND_GATE) {
-            // Torches for NAND
-            renderPart(7.0f, 2.0f, 2.0f, 9.0f, 6.0f, 4.0f, "redstone_torch", x, y, z, chunk, atlas, buffer, sl, bl);
-            renderPart(6.0f, 2.0f, 1.9f, 10.0f, 6.0f, 4.1f, "redstone_torch", x, y, z, chunk, atlas, buffer, sl, bl);
-        } 
-        else if (block == Block.NOT_GATE) {
-            // Torches for NOT
-            renderPart(7.0f, 2.0f, 2.0f, 9.0f, 6.0f, 4.0f, "redstone_torch", x, y, z, chunk, atlas, buffer, sl, bl);
-            renderPart(6.0f, 2.0f, 1.9f, 10.0f, 6.0f, 4.1f, "redstone_torch", x, y, z, chunk, atlas, buffer, sl, bl);
-        }
-        // OR, XOR, AND, LATCH usually just rely on the Top Symbol texture in simplified models, 
-        // but you can add more 'renderPart' calls here if you have specific JSON geometry for them.
+    // Overload 1: Automatic Texture Lookup
+     private void renderBox(Block block, float x0, float y0, float z0, float x1, float y1, float z1, 
+                           TextureAtlas atlas, FloatList buffer, int sl, int bl) {
+        float texIdx = atlas.getIndex(block.name().toLowerCase(), Direction.UP);
+        renderBox(null, x0, y0, z0, x1, y1, z1, atlas, buffer, sl, bl, texIdx);
     }
 
-    // =================================================================
-    //  CORE HELPERS
-    // =================================================================
-
-    /**
-     * Renders a box using Minecraft JSON coordinates (0-16).
-     * Handles Metadata Rotation automatically.
-     */
-    private void renderPart(float fromX, float fromY, float fromZ, 
-                            float toX, float toY, float toZ, 
-                            String texture, int x, int y, int z, 
-                            Chunk chunk, TextureAtlas atlas, FloatList buffer, int sl, int bl) {
-        
-        // 1. Normalize 0-16 to 0.0-1.0
-        float minX = fromX / 16.0f;
-        float minY = fromY / 16.0f;
-        float minZ = fromZ / 16.0f;
-        float maxX = toX / 16.0f;
-        float maxY = toY / 16.0f;
-        float maxZ = toZ / 16.0f;
-
-        // 2. Get Rotation from Metadata
-        byte meta = chunk.getMetadata(x, y, z);
-        int rotation = meta & 3; // 0=South, 1=West, 2=North, 3=East
-        
-        // 3. Rotate the Box (Pivot 0.5, 0.5)
-        float rMinX = minX, rMinZ = minZ, rMaxX = maxX, rMaxZ = maxZ;
-        
-        for (int i = 0; i < rotation; i++) {
-            // Rotate 90 deg clockwise
-            float oldMinX = rMinX;
-            float oldMaxX = rMaxX;
-            
-            // X becomes inverted Z
-            rMinX = 1.0f - rMaxZ;
-            rMaxX = 1.0f - rMinZ;
-            
-            // Z becomes X
-            rMinZ = oldMinX;
-            rMaxZ = oldMaxX;
-        }
-
-        // 4. Render
-        float texIdx = atlas.getIndex(texture, Direction.UP);
-        
-        // Handle flattened boxes (Decals)
-        if (minY == maxY) {
-            // Render just the top quad to avoid z-fighting side artifacts on decals
-            addQuad(buffer, x + rMinX, y + maxY, z + rMinZ, x + rMaxX, y + maxY, z + rMaxZ, 0,0,1,1, Direction.UP, sl, bl, texIdx);
-        } else {
-            // Render full box
-            renderBox(null, 
-                      x + rMinX, y + minY, z + rMinZ, 
-                      x + rMaxX, y + maxY, z + rMaxZ, 
-                      atlas, buffer, sl, bl, texIdx);
-        }
-    }
-
+    // Overload 2: Explicit Texture Index
     private void renderBox(Block ignored, float x0, float y0, float z0, float x1, float y1, float z1, 
                            TextureAtlas atlas, FloatList buffer, int sl, int bl, float texIdx) {
-        addQuad(buffer, x0, y0, z1, x1, y1, z1, 0,0,1,1, Direction.SOUTH, sl, bl, texIdx);
-        addQuad(buffer, x1, y0, z0, x0, y1, z0, 0,0,1,1, Direction.NORTH, sl, bl, texIdx);
-        addQuad(buffer, x0, y0, z0, x0, y1, z1, 0,0,1,1, Direction.WEST, sl, bl, texIdx);
-        addQuad(buffer, x1, y0, z1, x1, y1, z0, 0,0,1,1, Direction.EAST, sl, bl, texIdx);
-        addQuad(buffer, x0, y1, z0, x1, y1, z1, 0,0,1,1, Direction.UP, sl, bl, texIdx);
-        addQuad(buffer, x0, y0, z0, x1, y0, z1, 0,0,1,1, Direction.DOWN, sl, bl, texIdx);
+        
+        // BOX MAPPING LOGIC:
+        // Instead of 0..1 for every face, we use the local coordinates (relative to block).
+        // This ensures a 2-pixel wide stick only grabs 2 pixels of the texture.
+        
+        // We need local coordinates (0..1) for UVs.
+        // Since x0, y0, etc are World Coordinates (e.g., 5.4, 60.0), we need to extract the fraction.
+        // However, renderPart passes coordinates that are ALREADY relative to the block anchor + rotation.
+        // Wait, 'generate' passes World Coordinates (x,y,z integers + float offsets).
+        
+        // We can extract local UVs by taking modulo 1.0, OR simpler:
+        // Just pass the float coordinates as UVs. The Shader's "fract()" will handle the wrapping for us!
+        // This is the beauty of the shader fix we did earlier.
+        
+        // UP (Y+)
+        // U: X direction, V: Z direction
+        addQuad(buffer, x0, y1, z0, x1, y1, z1, x0, z0, x1, z1, Direction.UP, sl, bl, texIdx);
+
+        // DOWN (Y-)
+        // U: X, V: Z
+        addQuad(buffer, x0, y0, z0, x1, y0, z1, x0, z0, x1, z1, Direction.DOWN, sl, bl, texIdx);
+
+        // NORTH (Z-)
+        // Face is in XY plane. U: X, V: Y
+        // We flip X UVs for back faces usually, but let's stick to world coords for tiling consistency.
+        addQuad(buffer, x1, y0, z0, x0, y1, z0, x1, y0, x0, y1, Direction.NORTH, sl, bl, texIdx);
+
+        // SOUTH (Z+)
+        addQuad(buffer, x0, y0, z1, x1, y1, z1, x0, y0, x1, y1, Direction.SOUTH, sl, bl, texIdx);
+
+        // WEST (X-)
+        // Face in ZY plane. U: Z, V: Y
+        addQuad(buffer, x0, y0, z0, x0, y1, z1, z0, y0, z1, y1, Direction.WEST, sl, bl, texIdx);
+
+        // EAST (X+)
+        addQuad(buffer, x1, y0, z1, x1, y1, z0, z1, y0, z0, y1, Direction.EAST, sl, bl, texIdx);
     }
+    // Overload 2: Explicit Texture Index (Used by BlockModel logic internally)
+    
 
     // =================================================================
-    //  REDSTONE WIRE RENDERER (Vertical Support)
+    //  REDSTONE WIRE
     // =================================================================
 
     private void renderWire(int x, int y, int z, Chunk chunk, World world, TextureAtlas atlas, FloatList buffer, int sl, int bl) {
         float texIdx = atlas.getIndex("wire", Direction.UP);
         
-        // Center Dot (Always present)
+        // Center Dot
         addQuad(buffer, x, y+0.01f, z, x+1, y+0.01f, z+1, 0,0,1,1, Direction.UP, sl, bl, texIdx);
         
         // Check Neighbors
@@ -163,37 +124,23 @@ public class ModelMesher {
     
     private void checkWireConnection(int x, int y, int z, int dx, int dz, Direction dir, 
                                      Chunk chunk, World world, TextureAtlas atlas, FloatList buffer, int sl, int bl, float tid) {
-        // 1. Same Level (Connect to wire or gate)
         Block same = getNeighbor(chunk, world, x + dx, y, z + dz);
         if (same == Block.WIRE || same.isLogicGate()) {
-            // Render Flat Arm
-            // We use simple quads to fill the gap to the edge
-            // Logic: Expand center dot towards direction
-            float x0=x, z0=z, x1=x+1, z1=z+1;
-            if (dir == Direction.NORTH) z0 = z - 1; // Visual extension handled by just rendering 0-1 range on specific axis?
-            // Actually, we should just render the specific arm.
-            // Simplified: Draw a quad from center to edge.
-            // Center is 0.5. Edge is 0.0 or 1.0.
-            // Keeping it simple: Draw the full block floor for now, or use specific UVs for lines in a polish pass.
-            // Current 'Center Dot' covers the whole block floor.
-            return;
+            return; // Assume center dot covers flat connection for now
         }
         
-        // 2. Vertical (Climbing)
-        // If block at side is Solid AND block above it is Wire
         Block side = getNeighbor(chunk, world, x + dx, y, z + dz);
         Block up = getNeighbor(chunk, world, x + dx, y + 1, z + dz);
         
         if (side.isSolid() && up == Block.WIRE) {
-            // Render Vertical Quad against the wall
-            if (dir == Direction.NORTH) { // Wall is at Z-1
-                // Quad on South face of neighbor (Z=0 plane relative to us)
+            // Vertical Wire
+            if (dir == Direction.NORTH) { 
                 addQuad(buffer, x, y, z, x+1, y+1, z, 0,0,1,1, Direction.SOUTH, sl, bl, tid);
-            } else if (dir == Direction.SOUTH) { // Wall is at Z+1
+            } else if (dir == Direction.SOUTH) { 
                 addQuad(buffer, x+1, y, z+1, x, y+1, z+1, 0,0,1,1, Direction.NORTH, sl, bl, tid);
-            } else if (dir == Direction.EAST) { // Wall is at X+1
+            } else if (dir == Direction.EAST) { 
                 addQuad(buffer, x+1, y, z, x+1, y+1, z+1, 0,0,1,1, Direction.WEST, sl, bl, tid);
-            } else if (dir == Direction.WEST) { // Wall is at X-1
+            } else if (dir == Direction.WEST) { 
                 addQuad(buffer, x, y, z+1, x, y+1, z, 0,0,1,1, Direction.EAST, sl, bl, tid);
             }
         }
@@ -205,7 +152,6 @@ public class ModelMesher {
 
     private void renderTorch(Block block, int x, int y, int z, TextureAtlas atlas, FloatList buffer, int sl, int bl) {
         float texIdx = atlas.getIndex("redstone_torch", Direction.UP);
-        // Stick shape
         renderBox(null, x + 0.4375f, y, z + 0.4375f, x + 0.5625f, y + 0.6f, z + 0.5625f, atlas, buffer, sl, bl, texIdx);
     }
 
@@ -241,6 +187,10 @@ public class ModelMesher {
         }
     }
 
+    // =================================================================
+    //  CORE HELPERS
+    // =================================================================
+
     private void addQuad(FloatList b, float x0, float y0, float z0, float x1, float y1, float z1, 
                          float u0, float v0, float u1, float v1, Direction dir, int sl, int bl, float tid) {
         
@@ -268,7 +218,18 @@ public class ModelMesher {
     }
 
     private void addVert(FloatList b, float[] p, float u, float v, float sl, float bl, float tid) {
-        b.add(p[0]); b.add(p[1]); b.add(p[2]); b.add(u); b.add(v); b.add(sl); b.add(bl); b.add(tid);
+        b.add(p[0]); b.add(p[1]); b.add(p[2]);
+        b.add(u); b.add(v);
+        b.add(sl); b.add(bl);
+        b.add(tid);
+    }
+    
+    // Helper to pass floats directly
+    private void addVert(FloatList b, float x, float y, float z, float u, float v, float sl, float bl, float tid) {
+        b.add(x); b.add(y); b.add(z);
+        b.add(u); b.add(v);
+        b.add(sl); b.add(bl);
+        b.add(tid);
     }
 
     private float getFluidHeight(Block b) {
