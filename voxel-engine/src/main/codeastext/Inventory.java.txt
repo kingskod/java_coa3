@@ -7,6 +7,9 @@ public class Inventory {
     private final ItemStack[] slots;
     private final int size = 36; // 9 Hotbar + 27 Storage
     private int selectedSlot = 0; // 0-8
+    
+    // The item currently being dragged by the mouse
+    private ItemStack heldStack = new ItemStack(Block.AIR, 0);
 
     public Inventory() {
         slots = new ItemStack[size];
@@ -16,29 +19,49 @@ public class Inventory {
             slots[i] = new ItemStack(Block.AIR, 0);
         }
 
-        // Fill hotbar with default stacks
-        slots[0] = new ItemStack(Block.STONE, 64);
-        slots[1] = new ItemStack(Block.GRASS, 64);
-        slots[2] = new ItemStack(Block.DIRT, 64);
-        slots[3] = new ItemStack(Block.COBBLESTONE, 64);
-        slots[4] = new ItemStack(Block.PLANKS, 64);
-        slots[5] = new ItemStack(Block.SAND, 64);
-        slots[6] = new ItemStack(Block.GLASS, 64);
-        slots[7] = new ItemStack(Block.LOG, 64);
-        slots[8] = new ItemStack(Block.LEAVES, 64);
+        // --- NEW DEFAULT ITEMS (Requested) ---
+        slots[0] = new ItemStack(Block.REDSTONE_TORCH, 64);
+        slots[1] = new ItemStack(Block.WIRE, 64);
+        slots[2] = new ItemStack(Block.OR_GATE, 64);
+        slots[3] = new ItemStack(Block.AND_GATE, 64);
+        slots[4] = new ItemStack(Block.XOR_GATE, 64);
+        slots[5] = new ItemStack(Block.LEVER, 64);
+        slots[6] = new ItemStack(Block.REDSTONE_LAMP_OFF, 64);
+        slots[7] = new ItemStack(Block.STONE, 64);
+        slots[8] = new ItemStack(Block.GRASS, 64);
         
-        // Debug: Add new water/ore blocks to inventory storage (slots 9+)
-        // These won't show in hotbar yet but exist in data
+        // Storage (Debug items)
         slots[9] = new ItemStack(Block.WATER_SOURCE, 1);
         slots[10] = new ItemStack(Block.DIAMOND_ORE, 64);
-        slots[11] = new ItemStack(Block.REDSTONE_LAMP_OFF, 16);
     }
+
+    // --- Interaction Logic ---
+    
+    public ItemStack getHeldStack() {
+        return heldStack;
+    }
+    
+    public void setHeldStack(ItemStack stack) {
+        this.heldStack = stack;
+    }
+    
+    public void setSlot(int index, ItemStack stack) {
+        if (index >= 0 && index < size) {
+            slots[index] = stack;
+        }
+    }
+
+    public ItemStack getStack(int slot) {
+        if (slot < 0 || slot >= size) return new ItemStack(Block.AIR, 0);
+        return slots[slot];
+    }
+
+    // --- Existing Logic ---
 
     public ItemStack getSelectedStack() {
         return slots[selectedSlot];
     }
     
-    // Decrements the selected stack by 1. Returns true if successful.
     public boolean useSelectedItem() {
         ItemStack stack = slots[selectedSlot];
         if (stack.isEmpty()) return false;
@@ -58,7 +81,6 @@ public class Inventory {
                 if (remainder == 0) return true; // Fully merged
             }
         }
-        
         // 2. Try to put in empty slot
         for (int i = 0; i < size; i++) {
             if (slots[i].isEmpty()) {
@@ -67,7 +89,7 @@ public class Inventory {
                 return true;
             }
         }
-        return false; // Inventory full
+        return false;
     }
 
     public void scroll(int direction) {
@@ -81,16 +103,10 @@ public class Inventory {
     }
 
     public int getSelectedSlot() { return selectedSlot; }
-
-    // Helper for UIManager to get Block type easily
+    
     public Block getItemType(int slot) {
         if (slot < 0 || slot >= size) return Block.AIR;
         return slots[slot].getBlock();
-    }
-    
-    public ItemStack getStack(int slot) {
-        if (slot < 0 || slot >= size) return new ItemStack(Block.AIR, 0);
-        return slots[slot];
     }
     public void save() {
         try (java.io.DataOutputStream out = new java.io.DataOutputStream(new java.io.FileOutputStream("saves/world1/player.dat"))) {

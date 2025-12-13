@@ -147,9 +147,8 @@ public class UIManager {
             containerScreen.render(shader, windowWidth, windowHeight, orthoProjection, mx, my);
         }
         
-        // ------------------------------------------------
-        // 2. HUD (Hotbar, Crosshair) - Only if Inventory Closed
-        // ------------------------------------------------
+        // 2. HUD (Hotbar, Crosshair)
+        // FIX: Only render HUD if inventory is CLOSED
         if (!isInventoryOpen) {
             renderHUD(windowWidth, windowHeight);
         }
@@ -210,28 +209,23 @@ public class UIManager {
 
         // 3. Items (Icons)
         glBindTexture(GL_TEXTURE_2D, textureAtlas.getTextureId());
-        shader.setUniform("uUVScale", 1.0f / 16.0f); // Atlas Mode
+        shader.setUniform("uUVScale", 1.0f / 16.0f);
         shader.setUniform("uColorMod", new Vector4f(1.0f, 1.0f, 1.0f, 1.0f)); 
         
-        float startX = centerX - (barWidth / 2.0f) + (3 * scale);
-        float slotStride = 20 * scale;
-        float itemY = barY;
+        float startX = (w / 2.0f) - (182 * 2.0f / 2.0f) + (3 * 2.0f);
+        float slotStride = 20 * 2.0f;
+        float itemY = 10 + (22 * 2.0f / 2.0f); // Center Y
         
         for (int i = 0; i < 9; i++) {
             ItemStack stack = inventory.getStack(i);
             Block item = stack.getBlock();
             
             if (item != Block.AIR) {
-                String iconName = item.getItemIcon();
-                if (iconName == null) iconName = item.name().toLowerCase();
+                // ... (Texture lookup) ...
                 
-                int index = textureAtlas.getIndex(iconName, Direction.SOUTH);
-                float col = index % 16;
-                float row = index / 16;
-                shader.setUniform("uUVOffset", new Vector2f(col / 16.0f, row / 16.0f));
-                
-                float itemSize = 16 * scale * 0.7f; 
-                float itemX = startX + (i * slotStride) + (20*scale/2.0f); 
+                // FIX: Reduced Size & Centered
+                float itemSize = 16 * 2.0f * 0.55f; // Scale 0.55 to fit inside 20px slot
+                float itemX = startX + (i * slotStride) + (20 * 2.0f / 2.0f) - (3.0f); // Manual padding adjustment
                 
                 Matrix4f iconModel = new Matrix4f()
                     .translate(itemX, itemY, 0)

@@ -84,11 +84,10 @@ public class GreedyMesher {
 
                     boolean visible = false;
                     
+                    // Only greedy-mesh Full Cubes. Everything else handled by ModelMesher.
                     if (current != Block.AIR && current.isFullCube()) {
-                        // Render if neighbor is Air, Transparent, or non-full (like water)
                         if (neighbor == Block.AIR || neighbor.isTransparent() || !neighbor.isFullCube()) {
                             visible = true;
-                            // Fix Z-fighting for adjacent leaves
                             if (current == neighbor && current.isTransparent()) visible = false; 
                         }
                     }
@@ -135,13 +134,8 @@ public class GreedyMesher {
                         }
 
                         float texIdx = atlas.getIndex(type.name().toLowerCase(), dir);
-                        // Cutout blocks (Leaves/Glass) must write to depth, so use Opaque buffer
-                        // ANTI-TESSELLATION FEATURE:
-                        // If block is Grass, Sand, or Stone, and we are looking at the TOP face (UP),
-                        // Mark it for random rotation by making the index negative.
-                        if (dir == Direction.UP && 
-                           (type == Block.GRASS || type == Block.SAND || type == Block.STONE || type == Block.DIRT)) {
-                            // We use -1.0 as an offset so index 0 becomes -1.0, index 5 becomes -6.0
+                        // Anti-Tessellation Logic: Random rotation for Grass/Dirt/Stone on Top Face
+                        if (dir == Direction.UP && (type == Block.GRASS || type == Block.DIRT || type == Block.STONE || type == Block.SAND)) {
                             texIdx = -(texIdx + 1.0f);
                         }
 
@@ -180,8 +174,8 @@ public class GreedyMesher {
         float[] v2 = new float[]{pos[0], pos[1], pos[2]};
         float[] v3 = new float[]{pos[0], pos[1], pos[2]};
 
-        // FIX: Correct Axis Offset Logic
-        // This shifts the face plane to the far side of the block if direction is positive
+        // FIX: Explicitly offset the face plane based on direction
+        // This ensures TOP faces move UP (Y+1), EAST faces move RIGHT (X+1), etc.
         if (dir == Direction.EAST) {
              v0[0]++; v1[0]++; v2[0]++; v3[0]++;
         } else if (dir == Direction.UP) {

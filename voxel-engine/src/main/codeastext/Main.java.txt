@@ -4,6 +4,7 @@ import com.voxelengine.audio.SoundManager;
 import com.voxelengine.core.GameLoop;
 import com.voxelengine.core.Input;
 import com.voxelengine.core.Window;
+import com.voxelengine.entity.AABB;
 import com.voxelengine.entity.EntityManager;
 import com.voxelengine.entity.ItemEntity;
 import com.voxelengine.entity.PhysicsEngine;
@@ -11,6 +12,7 @@ import com.voxelengine.entity.Player;
 import com.voxelengine.logic.LogicSystem;
 import com.voxelengine.render.Camera;
 import com.voxelengine.render.Renderer;
+import com.voxelengine.render.TextureAtlas;
 import com.voxelengine.ui.Inventory;
 import com.voxelengine.ui.ItemStack;
 import com.voxelengine.ui.UIManager;
@@ -94,10 +96,12 @@ public class Main {
                 boolean clickedRight = Input.isMouseButtonDown(1);
                 
                 if (clickedLeft && !mouseState[0]) {
-                    raycast(world, camera, true, inventory, logic, entityManager, soundManager);
+                    // Pass renderer.getTextureAtlas() here
+                    raycast(world, camera, true, inventory, logic, entityManager, soundManager, renderer.getTextureAtlas());
                 }
                 if (clickedRight && !mouseState[1]) {
-                    raycast(world, camera, false, inventory, logic, entityManager, soundManager);
+                    // Pass renderer.getTextureAtlas() here
+                    raycast(world, camera, false, inventory, logic, entityManager, soundManager, renderer.getTextureAtlas());
                 }
                 
                 mouseState[0] = clickedLeft;
@@ -125,48 +129,117 @@ public class Main {
         window.cleanup();
     }
     
-    private static void raycast(World world, Camera cam, boolean destroy, Inventory inventory, LogicSystem logic, EntityManager entityManager, SoundManager soundManager) {
-        Vector3f pos = new Vector3f(cam.getPosition());
+    // Updated signature to accept TextureAtlas
+    private static void raycast(World world, Camera cam, boolean destroy, Inventory inventory, LogicSystem logic, EntityManager entityManager, SoundManager soundManager, TextureAtlas atlas) {
+        Vector3f pos = cam.getPosition();
         Vector3f dir = new Vector3f();
         cam.getViewMatrix().positiveZ(dir).negate();
         
-        float step = 0.1f;
-        for (float dist = 0; dist < 5.0f; dist += step) {
-            pos.add(dir.x * step, dir.y * step, dir.z * step);
+        // Raycasting Params
+        float maxDist = 5.0f;
+        
+        // Store best hit
+        float closestDist = maxDist;
+        int hitX = 0, hitY = 0, hitZ = 0;
+        int sideX = 0, sideY = 0, sideZ = 0; // The side we hit (for placement)
+        boolean hitFound = false;
+
+        // Efficient Voxel Traversal (DDA) or just stepped check?
+        // Stepped check (0.05 step) is accurate enough for complex shapes
+        
+        // Optimization: We check blocks along the line.
+        // For each block, we check exact AABB intersection.
+        
+        float step = 0.05f;
+        Vector3f checkPos = new Vector3f();
+        
+        // Set of checked integer coordinates to avoid re-checking same block multiple times per step
+        // (Simplified: just loop)
+        
+        for (float d = 0; d < maxDist; d += step) {
+            checkPos.set(dir).mul(d).add(pos);
             
-            int x = (int) Math.floor(pos.x);
-            int y = (int) Math.floor(pos.y);
-            int z = (int) Math.floor(pos.z);
+            int x = (int) Math.floor(checkPos.x);
+            int y = (int) Math.floor(checkPos.y);
+            int z = (int) Math.floor(checkPos.z);
             
             Block b = world.getBlock(x, y, z);
             if (b != Block.AIR && !b.isWater()) {
-                if (destroy) {
-                    if (b.getSoundType() != null) soundManager.play(b.getSoundType().breakSound);
+                // Check exact shape
+                byte meta = world.getMetadata(x, y, z);
+                AABB box = b.getSelectionBox(x, y, z, meta);
+                if (box != null) {
+                    // Offset box to world space for check
+                    AABB worldBox = box.offset(x, y, z);
+                    float dist = worldBox.rayIntersect(pos, dir);
                     
-                    ItemStack drop = new ItemStack(b, 1);
-                    entityManager.addEntity(new ItemEntity(drop, x + 0.5f, y + 0.5f, z + 0.5f));
-                    
-                    world.setBlock(x, y, z, Block.AIR);
-                    logic.updateNetwork(x, y, z); 
-                    return;
-                } else {
-                    pos.sub(dir.x * step, dir.y * step, dir.z * step);
-                    int px = (int) Math.floor(pos.x);
-                    int py = (int) Math.floor(pos.y);
-                    int pz = (int) Math.floor(pos.z);
-                    
-                    ItemStack toPlace = inventory.getSelectedStack();
-                    if (toPlace.isEmpty()) return;
-
-                    double distToPlayer = pos.distance(cam.getPosition());
-                    if (distToPlayer > 1.0) {
-                        if (toPlace.getBlock().getSoundType() != null) soundManager.play(toPlace.getBlock().getSoundType().placeSound);
+                    if (dist != -1.0f && dist < closestDist) {
+                        closestDist = dist;
+                        hitX = x; hitY = y; hitZ = z;
+                        hitFound = true;
                         
-                        world.setBlock(px, py, pz, toPlace.getBlock());
-                        inventory.useSelectedItem();
-                        logic.updateNetwork(px, py, pz);
+                        // Determine face hit
+                        // Move back slightly along ray
+                        Vector3f hitPoint = new Vector3f(dir).mul(dist).add(pos);
+                        // Simple face determination based on hit point relative to box center/edges?
+                        // Or just step-back method (less accurate but easier):
+                        Vector3f prev = new Vector3f(dir).mul(dist - 0.01f).add(pos);
+                        sideX = (int)Math.floor(prev.x);
+                        sideY = (int)Math.floor(prev.y);
+                        sideZ = (int)Math.floor(prev.z);
+                        
+                        // Break early? No, we might hit a torch that is INSIDE the block bounds of air? 
+                        // No, blocks grid. The first solid hit is the closest.
+                        break; 
                     }
-                    return;
+                }
+            }
+        }
+
+        if (hitFound) {
+            if (destroy) {
+                Block b = world.getBlock(hitX, hitY, hitZ);
+                if (b.getSoundType() != null) soundManager.play(b.getSoundType().breakSound);
+                
+                ItemStack drop = new ItemStack(b, 1);
+                entityManager.addEntity(new ItemEntity(drop, hitX + 0.5f, hitY + 0.5f, hitZ + 0.5f, atlas));
+                
+                world.setBlock(hitX, hitY, hitZ, Block.AIR);
+                logic.updateNetwork(hitX, hitY, hitZ); 
+            } else {
+                // Place
+                ItemStack toPlace = inventory.getSelectedStack();
+                if (toPlace.isEmpty()) return;
+                
+                // Prevent placing inside player (AABB check)
+                // Use sideX/Y/Z calculated above
+                // Note: The simple step-back method works for full cubes. 
+                // For complex shapes, precise face normal is better, but this suffices for now.
+                
+                // Ensure target is replaceable or use offset
+                // Logic: If we hit a block, we place against it (side coords).
+                
+                // Collision check against player
+                AABB playerBox = new AABB(pos.x-0.3f, pos.y-1.5f, pos.z-0.3f, pos.x+0.3f, pos.y+0.3f, pos.z+0.3f);
+                AABB blockBox = new AABB(sideX, sideY, sideZ, sideX+1, sideY+1, sideZ+1);
+                
+                if (!playerBox.intersects(blockBox)) {
+                    if (toPlace.getBlock().getSoundType() != null) soundManager.play(toPlace.getBlock().getSoundType().placeSound);
+                    
+                    world.setBlock(sideX, sideY, sideZ, toPlace.getBlock());
+                    inventory.useSelectedItem();
+                    logic.updateNetwork(sideX, sideY, sideZ);
+                }
+                Block target = world.getBlock(hitX, hitY, hitZ);
+                if (target == Block.LEVER) {
+                // Toggle State (Meta Bit 2 is active)
+                    byte meta = world.getMetadata(hitX, hitY, hitZ);
+                    meta ^= 4; // Flip bit 2
+                    world.setMetadata(hitX, hitY, hitZ, meta);
+                    // Trigger updates
+                    logic.updateNetwork(hitX, hitY, hitZ);
+                    soundManager.play("lever.wav"); // If you have it
+                    return; // Don't place a block if we flipped a lever
                 }
             }
         }

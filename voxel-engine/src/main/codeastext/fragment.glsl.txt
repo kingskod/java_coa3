@@ -3,7 +3,7 @@
 in vec2 vTexCoord;
 in float vLight;
 in float vTexIndex;
-in vec3 vFragPos;
+in vec3 vFragPos; // Needed for random seed
 
 out vec4 FragColor;
 
@@ -17,7 +17,12 @@ uniform vec3 uCameraPos;
 uniform float uFogStart = 60.0;
 uniform float uFogEnd = 120.0;
 uniform vec3 uSkyColor;
-uniform float uDaylightFactor; // 1.0 = Day, ~0.2 = Night
+uniform float uDaylightFactor;
+
+// Pseudo-random function
+float random(vec2 st) {
+    return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
+}
 
 void main() {
     vec2 finalUV;
@@ -36,11 +41,42 @@ void main() {
     } 
     // WORLD / ATLAS MODE
     else {
-        int index = int(vTexIndex + 0.5);
+        float idxRaw = vTexIndex;
+        bool rotate = false;
+        
+        // Check for Anti-Tessellation Flag (Negative Index)
+        if (idxRaw < 0.0) {
+            idxRaw = abs(idxRaw) - 1.0;
+            rotate = true;
+        }
+        
+        int index = int(idxRaw + 0.5);
         float col = float(index % 16);
         float row = float(index / 16);
+        
         vec2 tiledUV = fract(vTexCoord);
-        tiledUV.y = 1.0 - tiledUV.y; 
+        
+        // Random Rotation Logic
+        if (rotate) {
+            // Use world X/Z position to pick a random rotation (0, 1, 2, 3)
+            // We use floor(vFragPos) to get the block coordinate
+            vec2 blockPos = floor(vFragPos.xz);
+            float rand = random(blockPos);
+            
+            // Rotate UVs around center (0.5, 0.5)
+            if (rand > 0.75) {
+                // 270 deg
+                tiledUV = vec2(tiledUV.y, 1.0 - tiledUV.x);
+            } else if (rand > 0.5) {
+                // 180 deg
+                tiledUV = vec2(1.0 - tiledUV.x, 1.0 - tiledUV.y);
+            } else if (rand > 0.25) {
+                // 90 deg
+                tiledUV = vec2(1.0 - tiledUV.y, tiledUV.x);
+            }
+        }
+        
+        tiledUV.y = 1.0 - tiledUV.y; // Standard Y flip
         finalUV = (vec2(col, row) * 16.0 + tiledUV * 16.0) / 256.0;
     }
 
@@ -48,11 +84,10 @@ void main() {
     
     if(texColor.a < 0.05) discard;
     
-    // In a full engine, light is a vec2(sky, block).
-    // Here we assume vLight is the combined max.
-    // We dim based on daylight. Block light (torches) should be unaffected.
-    // For simplicity, we dim everything for now.
-    float finalLight = currentLight * uDaylightFactor;
+    float finalLight = currentLight;
+    if (!isUI) {
+        finalLight *= uDaylightFactor;
+    }
     
     vec3 finalColor = texColor.rgb * finalLight;
     
@@ -60,7 +95,6 @@ void main() {
         finalColor *= uColorMod.rgb;
     }
 
-    // FOG
     if (!isUI) {
         float dist = length(vFragPos - uCameraPos);
         float fogFactor = clamp((dist - uFogStart) / (uFogEnd - uFogStart), 0.0, 1.0);

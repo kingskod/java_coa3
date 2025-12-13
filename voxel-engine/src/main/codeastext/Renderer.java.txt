@@ -165,4 +165,17 @@ public class Renderer {
         v[i++] = x3; v[i++] = y3; v[i++] = z3; v[i++] = 0; v[i++] = 0; v[i++] = l; v[i++] = l; v[i++] = t;
         return i;
     }
+    public void renderMesh(Mesh mesh, Matrix4f model) {
+        shader.bind();
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, atlas.getTextureId());
+        
+        shader.setUniform("uTexture", 0);
+        shader.setUniform("uUVScale", 1.0f); // World mode
+        shader.setUniform("uModel", model);
+        shader.setUniform("uOverrideTexIndex", -1.0f); // Use VBO indices
+        
+        mesh.render();
+        shader.unbind();
+    }
 }

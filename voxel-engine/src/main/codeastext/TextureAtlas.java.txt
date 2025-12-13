@@ -1,5 +1,7 @@
 package com.voxelengine.render;
 
+import com.voxelengine.utils.Direction;
+
 import javax.imageio.ImageIO;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
@@ -8,7 +10,6 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Map;
-import com.voxelengine.utils.Direction;
 
 import static org.lwjgl.opengl.GL11.*;
 import static org.lwjgl.opengl.GL12.GL_CLAMP_TO_EDGE;
@@ -24,8 +25,11 @@ public class TextureAtlas {
     private static final int ATLAS_SIZE = 256; // 16x16 blocks capacity
     private int textureId;
 
-    // Map texture name (e.g. "grass") to UV index (0..255)
+    // Map texture name (e.g. "grass") to UV index (0..255) for GreedyMesher
     private final Map<String, Integer> textureIndex = new HashMap<>();
+    
+    // Map texture name to exact UV bounds for ModelMesher
+    private final Map<String, Sprite> spriteMap = new HashMap<>();
 
     public TextureAtlas() {
         // Pre-register known textures to specific indices if needed,
@@ -42,6 +46,7 @@ public class TextureAtlas {
         int x = 0;
         int y = 0;
         int index = 0;
+        int cols = ATLAS_SIZE / BLOCK_SIZE; // 16
 
         File[] files = dir.listFiles((d, name) -> name.endsWith(".png"));
         if (files != null) {
@@ -52,6 +57,18 @@ public class TextureAtlas {
 
                     String name = f.getName().replace(".png", "");
                     textureIndex.put(name, index);
+
+                    // --- NEW: Calculate Sprite UVs ---
+                    // Normalize coordinates 0..1
+                    float uMin = (float)x / ATLAS_SIZE;
+                    float vMin = (float)y / ATLAS_SIZE;
+                    float uMax = (float)(x + BLOCK_SIZE) / ATLAS_SIZE;
+                    float vMax = (float)(y + BLOCK_SIZE) / ATLAS_SIZE;
+
+                    // Bleed Fix: Shrink window slightly to prevent sampling neighbor pixels
+                    float padding = 0.0001f;
+                    spriteMap.put(name, new Sprite(uMin + padding, vMin + padding, uMax - padding, vMax - padding));
+                    // ---------------------------------
 
                     // Advance
                     x += BLOCK_SIZE;
@@ -83,11 +100,23 @@ public class TextureAtlas {
 
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
-                int pixel = pixels[y * width + x]; // Standard order
-                buffer.put((byte) ((pixel >> 16) & 0xFF)); // R
-                buffer.put((byte) ((pixel >> 8) & 0xFF));  // G
-                buffer.put((byte) (pixel & 0xFF));         // B
-                buffer.put((byte) ((pixel >> 24) & 0xFF)); // A
+                int pixel = pixels[y * width + x];
+                
+                int r = (pixel >> 16) & 0xFF;
+                int g = (pixel >> 8) & 0xFF;
+                int b = (pixel & 0xFF);
+                int a = (pixel >> 24) & 0xFF;
+
+                // BUG FIX: Force Water Transparency
+                // If alpha is full (255) but it looks like water (blue > red+green)
+                if (a == 255 && b > r + g) {
+                    a = 160; // 60% opacity
+                }
+
+                buffer.put((byte) r);
+                buffer.put((byte) g);
+                buffer.put((byte) b);
+                buffer.put((byte) a);
             }
         }
         buffer.flip();
@@ -95,6 +124,7 @@ public class TextureAtlas {
         textureId = glGenTextures();
         glBindTexture(GL_TEXTURE_2D, textureId);
 
+        // Nearest Neighbor for crisp pixels
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -106,26 +136,32 @@ public class TextureAtlas {
 
     public int getTextureId() { return textureId; }
 
-    // Returns the texture index (0..255) for the shader to calculate UVs
-    // Returns the texture index (0..255) for the shader to calculate UVs
+    // Returns the texture index (0..255) for the shader (Greedy Meshing)
     public int getIndex(String name, Direction dir) {
-        // 1. Try specific direction (e.g. "grass_up", "log_up")
         String sideName = name + "_" + dir.name().toLowerCase();
         if (textureIndex.containsKey(sideName)) {
             return textureIndex.get(sideName);
         }
         
-        // 2. Try generic "side"/ "top" mapping if horizontal
         if (dir == Direction.UP || dir == Direction.DOWN) {
-             String topName = name + "_up"; // Try finding _up for both up/down if not specific
+             String topName = name + "_up";
              if (textureIndex.containsKey(topName)) return textureIndex.get(topName);
         } else {
              String sideGeneric = name + "_side";
              if (textureIndex.containsKey(sideGeneric)) return textureIndex.get(sideGeneric);
         }
         
-        // 3. Fallback to base name (e.g., "grass")
         return textureIndex.getOrDefault(name, 0); 
-    } // 2. Fallback to base name (e.g., "grass")
-       
+    }
+    
+    // Returns the Sprite object for CPU baking (Model Meshing)
+    public Sprite getSprite(String name) {
+        // We use the same fallback logic as getIndex, but return the Sprite object
+        if (spriteMap.containsKey(name)) return spriteMap.get(name);
+        
+        // Fallback to "missing texture" (usually index 0)
+        // In a robust engine we'd return a specific purple/black checkerboard sprite.
+        // For now, return the first sprite found or a default.
+        return spriteMap.values().stream().findFirst().orElse(new Sprite(0,0,0,0));
+    }
 }

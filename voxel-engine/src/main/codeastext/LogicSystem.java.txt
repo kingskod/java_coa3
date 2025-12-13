@@ -2,6 +2,7 @@ package com.voxelengine.logic;
 
 import com.voxelengine.world.Block;
 import com.voxelengine.world.FluidSimulator;
+import com.voxelengine.world.GravitySimulator;
 import com.voxelengine.world.World;
 
 import java.util.PriorityQueue;
@@ -12,24 +13,25 @@ public class LogicSystem {
 
     private final World world;
     private final FluidSimulator fluidSimulator;
+    private final GravitySimulator gravitySimulator; // NEW
     
     // Instant Updates (Wires)
     private final Queue<Node> updateQueue = new ConcurrentLinkedQueue<>();
     
-    // Delayed Updates (Water, Torches, Repeaters)
+    // Delayed Updates
     private final PriorityQueue<ScheduledTick> tickQueue = new PriorityQueue<>();
     private long currentTick = 0;
 
     public LogicSystem(World world) {
         this.world = world;
         this.fluidSimulator = new FluidSimulator(world, this);
+        this.gravitySimulator = new GravitySimulator(world, this); // NEW
     }
 
     // --- Tick Engine ---
     public void tick() {
         currentTick++;
         
-        // Process scheduled events
         while (!tickQueue.isEmpty() && tickQueue.peek().executeTime <= currentTick) {
             ScheduledTick tick = tickQueue.poll();
             
@@ -37,10 +39,12 @@ public class LogicSystem {
 
             Block current = world.getBlock(tick.x, tick.y, tick.z);
             
-            // Validate block is still there
             if (current == tick.block) {
                 if (current.isWater()) {
                     fluidSimulator.update(tick.x, tick.y, tick.z, current);
+                } else if (current.hasGravity()) {
+                    // NEW: Gravity logic
+                    gravitySimulator.update(tick.x, tick.y, tick.z, current);
                 } else if (current.isLogicGate()) {
                     LogicGate.updateState(world, tick.x, tick.y, tick.z, current);
                 }
@@ -57,7 +61,6 @@ public class LogicSystem {
     // --- Redstone Engine ---
     public void updateNetwork(int x, int y, int z) {
         updateQueue.add(new Node(x, y, z));
-        // Also check neighbors logic state
         LogicGate.evaluate(world, this, x, y, z, world.getBlock(x, y, z));
     }
 
@@ -70,7 +73,7 @@ public class LogicSystem {
             if (!world.isLoaded(node.x, node.z)) continue;
 
             Block block = world.getBlock(node.x, node.y, node.z);
-            int currentSignal = world.getBlockLight(node.x, node.y, node.z); // Redstone uses LightMap channel
+            int currentSignal = world.getBlockLight(node.x, node.y, node.z);
             int newSignal = 0;
 
             if (block == Block.WIRE) {
@@ -79,12 +82,9 @@ public class LogicSystem {
                 
                 for (int[] d : dirs) {
                     Block nb = world.getBlock(node.x + d[0], node.y + d[1], node.z + d[2]);
-                    // Direct Sources
                     if (nb.isPowerSource()) {
                         maxInput = 15;
-                    } 
-                    // Wires
-                    else if (nb == Block.WIRE) {
+                    } else if (nb == Block.WIRE) {
                         int val = world.getBlockLight(node.x + d[0], node.y + d[1], node.z + d[2]);
                         if (val > maxInput) maxInput = val;
                     }
@@ -98,10 +98,7 @@ public class LogicSystem {
             }
 
             if (newSignal != currentSignal) {
-                // Update Signal Strength
                 world.setBlockLight(node.x, node.y, node.z, newSignal);
-                
-                // Propagate to neighbors
                 int[][] dirs = {{1,0,0}, {-1,0,0}, {0,1,0}, {0,-1,0}, {0,0,1}, {0,0,-1}};
                 for (int[] d : dirs) {
                     int nx = node.x + d[0];
@@ -110,14 +107,12 @@ public class LogicSystem {
                     
                     updateQueue.add(new Node(nx, ny, nz));
                     
-                    // Check logic components nearby (Torches need to know wire changed)
                     Block nb = world.getBlock(nx, ny, nz);
                     if (nb.isLogicGate()) {
                         LogicGate.evaluate(world, this, nx, ny, nz, nb);
                     }
                 }
                 
-                // Interaction (Lamps)
                 if (block == Block.REDSTONE_LAMP_OFF && newSignal > 0) {
                     world.setBlock(node.x, node.y, node.z, Block.REDSTONE_LAMP_ON);
                 } else if (block == Block.REDSTONE_LAMP_ON && newSignal == 0) {

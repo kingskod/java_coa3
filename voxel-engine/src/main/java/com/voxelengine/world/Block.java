@@ -10,9 +10,9 @@ public enum Block {
     
     AIR(0, true, false, false, null, true, false, null),
     
-    // Standard
+    // Standard Blocks
     STONE(1, false, true, false, SoundType.STONE, true, true, "stone"),
-    GRASS(2, false, true, false, SoundType.GRASS, true, true, "grass_side"), // Icon uses side
+    GRASS(2, false, true, false, SoundType.GRASS, true, true, "grass_side"),
     DIRT(3, false, true, false, SoundType.GRASS, true, true, "dirt"),
     COBBLESTONE(4, false, true, false, SoundType.STONE, true, true, "cobblestone"),
     PLANKS(5, false, true, false, SoundType.WOOD, true, true, "planks"),
@@ -23,22 +23,22 @@ public enum Block {
     // Fluids
     WATER(8, true, false, false, SoundType.LIQUID, false, false, "water_bucket"),
     
-    // Models
+    // Transparent Models
     LEAVES(9, true, true, false, SoundType.GRASS, true, false, "leaves"),
     LOG(10, false, true, false, SoundType.WOOD, true, true, "log"),
     GLASS(11, true, true, false, SoundType.STONE, true, true, "glass"),
     
-    // Logic Components
+    // Basic Logic Components
     REDSTONE_LAMP_OFF(12, false, true, false, SoundType.STONE, true, true, "redstone_lamp_off"),
     REDSTONE_LAMP_ON(13, false, true, true, SoundType.STONE, true, true, "redstone_lamp_on"),
-    WIRE(14, true, false, false, SoundType.STONE, false, false, "redstone_dust"), // Changed name
+    WIRE(14, true, false, false, SoundType.STONE, false, false, "redstone_dust"),
     REDSTONE_TORCH(15, true, false, true, SoundType.WOOD, false, false, "redstone_torch"),
     LEVER(16, true, false, false, SoundType.WOOD, false, false, "lever"),
     REPEATER(17, true, true, false, SoundType.STONE, false, false, "repeater"),
     COMPARATOR(18, true, true, false, SoundType.STONE, false, false, "comparator"),
     REDSTONE_TORCH_OFF(28, true, false, false, SoundType.WOOD, false, false, "redstone_torch"),
     
-    // ADVANCED LOGIC GATES (Uses specific item icons)
+    // Advanced Logic Gates (Using Mod Icons)
     AND_GATE(30, true, false, false, SoundType.STONE, false, false, "and_gate_item"),
     OR_GATE(31, true, false, false, SoundType.STONE, false, false, "or_gate_item"),
     NOT_GATE(32, true, false, false, SoundType.STONE, false, false, "not_gate_item"),
@@ -67,11 +67,12 @@ public enum Block {
     private final SoundType soundType;
     private final boolean fullCube;
     private final boolean gravity;
-    private final String itemIcon; // NEW FIELD
+    private final String itemIcon;
 
+    // Pre-defined Collision Shapes
     private static final List<AABB> FULL_CUBE_AABB = Collections.singletonList(new AABB(0, 0, 0, 1, 1, 1));
-    private static final List<AABB> FLAT_AABB = Collections.singletonList(new AABB(0, 0, 0, 1, 0.15f, 1));
-    private static final List<AABB> EMPTY_AABB = Collections.emptyList();
+    private static final List<AABB> PLATE_AABB = Collections.singletonList(new AABB(0, 0, 0, 1, 0.125f, 1)); // For Gates
+    private static final List<AABB> EMPTY_AABB = Collections.emptyList(); // For walk-through blocks
 
     Block(int id, boolean transparent, boolean solid, boolean lightSource, SoundType soundType, boolean fullCube, boolean gravity, String itemIcon) {
         this.id = (byte) id;
@@ -91,10 +92,13 @@ public enum Block {
     public SoundType getSoundType() { return soundType; }
     public boolean isFullCube() { return fullCube; }
     public boolean hasGravity() { return gravity; }
-    public String getItemIcon() { return itemIcon; } // GETTER
+    public String getItemIcon() { return itemIcon; }
+
+    // --- Properties ---
 
     public int getLightLevel() {
-        return (this == REDSTONE_LAMP_ON || this == REDSTONE_TORCH || this == LATCH_ON) ? 15 : 0;
+        if (this == REDSTONE_LAMP_ON || this == REDSTONE_TORCH || this == LATCH_ON) return 15;
+        return 0;
     }
 
     public boolean isPowerSource() {
@@ -117,10 +121,13 @@ public enum Block {
     }
     
     public float getOpacity() {
+        // Opacity for lighting calculations
         if (this.transparent || !this.fullCube) return 0.0f;
         return 1.0f; 
     }
     
+    // --- Metadata Helpers ---
+
     public Direction getRotation(byte meta) {
         switch(meta & 3) { 
             case 0: return Direction.SOUTH;
@@ -132,7 +139,7 @@ public enum Block {
     }
     
     public boolean isActive(byte meta) {
-        return (meta & 4) != 0;
+        return (meta & 4) != 0; // Check Bit 2
     }
     
     public byte getMetadata(Direction rot, boolean active) {
@@ -147,16 +154,60 @@ public enum Block {
         return (byte)r;
     }
 
+    // --- Physics & Interaction ---
+
+    /**
+     * Returns a list of collision boxes for PhysicsEngine.
+     * Empty list means the player can walk through it.
+     */
     public List<AABB> getColliders(int x, int y, int z, byte metadata) {
+        // 1. Pass-through blocks
         if (!solid) return EMPTY_AABB;
         if (isWater()) return EMPTY_AABB;
-        if (this == WIRE || this == REDSTONE_TORCH || this == REDSTONE_TORCH_OFF || this == LEVER) return EMPTY_AABB;
         
-        if (this.id >= 30 && this.id <= 36) return FLAT_AABB;
+        // 2. Walk-through logic components
+        if (this == WIRE || this == REDSTONE_TORCH || this == REDSTONE_TORCH_OFF || this == LEVER) {
+            return EMPTY_AABB;
+        }
 
+        // 3. Walk-ON logic components (Gates act as carpet/plates)
+        if (this.id >= 30 && this.id <= 36) {
+            return PLATE_AABB;
+        }
+
+        // 4. Standard Cubes
         if (fullCube) return FULL_CUBE_AABB; 
-        return FULL_CUBE_AABB;
+        
+        return FULL_CUBE_AABB; // Fallback
     }
+    
+    /**
+     * Returns the Raycast hit box for selection.
+     * Allows selecting blocks that have no collision (like Torches).
+     */
+    public AABB getSelectionBox(int x, int y, int z, byte metadata) {
+        if (this == AIR) return null;
+        
+        if (this == REDSTONE_TORCH || this == REDSTONE_TORCH_OFF) {
+            // Stick shape (centered)
+            return new AABB(0.4f, 0, 0.4f, 0.6f, 0.6f, 0.6f);
+        }
+        
+        if (this == WIRE) {
+             // Flat wire
+             return new AABB(0, 0, 0, 1, 0.1f, 1);
+        }
+
+        if (this.isLogicGate() || this.id >= 30 && this.id <= 36) {
+            // Plate shape
+            return new AABB(0, 0, 0, 1, 0.125f, 1);
+        }
+
+        // Standard Cube
+        return new AABB(0, 0, 0, 1, 1, 1);
+    }
+
+    // --- Registry Lookup ---
 
     private static final Block[] CACHE = new Block[256];
     static {

@@ -20,11 +20,14 @@ public class Input {
     private static boolean enterPressed = false;
     private static boolean backspacePressed = false;
     
+    private static int width, height;
     // Window Ref
     private static long window;
 
-    public static void init(long windowHandle) {
+    public static void init(long windowHandle, int w, int h) {
         window = windowHandle;
+        width = w;
+        height = h;
         
         GLFW.glfwSetKeyCallback(windowHandle, (win, key, scancode, action, mods) -> {
             if (key >= 0 && key < keys.length) {

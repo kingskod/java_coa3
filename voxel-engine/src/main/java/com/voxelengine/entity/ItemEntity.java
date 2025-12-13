@@ -13,7 +13,7 @@ public class ItemEntity extends Entity {
     private final ItemStack stack;
     private int lifeTime = 0;
     private float bobOffset;
-    private Mesh mesh; // Each item holds its own mini-mesh
+    private Mesh mesh; 
 
     public ItemEntity(ItemStack stack, float x, float y, float z, TextureAtlas atlas) {
         super(x, y, z, 0.25f, 0.25f);
@@ -27,54 +27,60 @@ public class ItemEntity extends Entity {
     }
     
     private void generateMesh(TextureAtlas atlas) {
-        String name = stack.getBlock().name().toLowerCase();
-        float[] v = new float[288]; // 6 faces * 6 verts * 8 floats
+        // FIX 1: Use the Item Icon name (e.g. "redstone_dust") instead of block name ("wire")
+        String name = stack.getBlock().getItemIcon();
+        if (name == null) name = stack.getBlock().name().toLowerCase();
+        
+        float[] v = new float[288]; 
         int i = 0;
         float l = 1.0f; // Full Bright
-        float s = 0.2f; // Size (radius)
+        float s = 0.25f; // Size (radius)
         
-        // Generate 6 faces with correct textures
-        i = addFace(v, i, Direction.NORTH, atlas.getIndex(name, Direction.NORTH), s, l);
-        i = addFace(v, i, Direction.SOUTH, atlas.getIndex(name, Direction.SOUTH), s, l);
-        i = addFace(v, i, Direction.EAST,  atlas.getIndex(name, Direction.EAST),  s, l);
-        i = addFace(v, i, Direction.WEST,  atlas.getIndex(name, Direction.WEST),  s, l);
-        i = addFace(v, i, Direction.UP,    atlas.getIndex(name, Direction.UP),    s, l);
-        i = addFace(v, i, Direction.DOWN,  atlas.getIndex(name, Direction.DOWN),  s, l);
+        // Generate 6 faces 
+        // Use generic direction (SOUTH) or specific if available, but items usually use one icon
+        float tex = atlas.getIndex(name, Direction.SOUTH);
+        
+        i = addFace(v, i, Direction.NORTH, tex, s, l);
+        i = addFace(v, i, Direction.SOUTH, tex, s, l);
+        i = addFace(v, i, Direction.EAST,  tex,  s, l);
+        i = addFace(v, i, Direction.WEST,  tex,  s, l);
+        i = addFace(v, i, Direction.UP,    tex,    s, l);
+        i = addFace(v, i, Direction.DOWN,  tex,  s, l);
         
         this.mesh = new Mesh(v);
     }
     
     private int addFace(float[] v, int i, Direction dir, float tid, float s, float l) {
-        // Vertices relative to center (0,0,0)
-        // Similar to Renderer logic but simplified for generic cube
         float x0=-s, y0=-s, z0=-s, x1=s, y1=s, z1=s;
+        float[] p0, p1, p2, p3; 
         
-        // Define quad points based on normal
-        float[] p0, p1, p2, p3; // BL, BR, TR, TL
-        
-        if (dir == Direction.NORTH) { // Z-
+        if (dir == Direction.NORTH) { 
              p0 = new float[]{x1, y0, z0}; p1 = new float[]{x0, y0, z0}; p2 = new float[]{x0, y1, z0}; p3 = new float[]{x1, y1, z0};
-        } else if (dir == Direction.SOUTH) { // Z+
+        } else if (dir == Direction.SOUTH) { 
              p0 = new float[]{x0, y0, z1}; p1 = new float[]{x1, y0, z1}; p2 = new float[]{x1, y1, z1}; p3 = new float[]{x0, y1, z1};
-        } else if (dir == Direction.EAST) { // X+
+        } else if (dir == Direction.EAST) { 
              p0 = new float[]{x1, y0, z1}; p1 = new float[]{x1, y0, z0}; p2 = new float[]{x1, y1, z0}; p3 = new float[]{x1, y1, z1};
-        } else if (dir == Direction.WEST) { // X-
+        } else if (dir == Direction.WEST) { 
              p0 = new float[]{x0, y0, z0}; p1 = new float[]{x0, y0, z1}; p2 = new float[]{x0, y1, z1}; p3 = new float[]{x0, y1, z0};
-        } else if (dir == Direction.UP) { // Y+
+        } else if (dir == Direction.UP) { 
              p0 = new float[]{x0, y1, z1}; p1 = new float[]{x1, y1, z1}; p2 = new float[]{x1, y1, z0}; p3 = new float[]{x0, y1, z0};
-        } else { // Y-
+        } else { 
              p0 = new float[]{x0, y0, z0}; p1 = new float[]{x1, y0, z0}; p2 = new float[]{x1, y0, z1}; p3 = new float[]{x0, y0, z1};
         }
         
-        // Add tris (UV 0,1 to 1,0 because shader flips)
+        // FIX 2: Correct UV Mapping for Items (Not upside down)
+        // V=0 is Bottom of texture, V=1 is Top.
+        // p0/p1 are bottom vertices -> Use 0.
+        // p2/p3 are top vertices -> Use 1.
+        
         // Tri 1
-        v[i++] = p0[0]; v[i++] = p0[1]; v[i++] = p0[2]; v[i++] = 0; v[i++] = 1; v[i++] = l; v[i++] = l; v[i++] = tid;
-        v[i++] = p1[0]; v[i++] = p1[1]; v[i++] = p1[2]; v[i++] = 1; v[i++] = 1; v[i++] = l; v[i++] = l; v[i++] = tid;
-        v[i++] = p2[0]; v[i++] = p2[1]; v[i++] = p2[2]; v[i++] = 1; v[i++] = 0; v[i++] = l; v[i++] = l; v[i++] = tid;
+        v[i++] = p0[0]; v[i++] = p0[1]; v[i++] = p0[2]; v[i++] = 0; v[i++] = 0; v[i++] = l; v[i++] = l; v[i++] = tid;
+        v[i++] = p1[0]; v[i++] = p1[1]; v[i++] = p1[2]; v[i++] = 1; v[i++] = 0; v[i++] = l; v[i++] = l; v[i++] = tid;
+        v[i++] = p2[0]; v[i++] = p2[1]; v[i++] = p2[2]; v[i++] = 1; v[i++] = 1; v[i++] = l; v[i++] = l; v[i++] = tid;
         // Tri 2
-        v[i++] = p0[0]; v[i++] = p0[1]; v[i++] = p0[2]; v[i++] = 0; v[i++] = 1; v[i++] = l; v[i++] = l; v[i++] = tid;
-        v[i++] = p2[0]; v[i++] = p2[1]; v[i++] = p2[2]; v[i++] = 1; v[i++] = 0; v[i++] = l; v[i++] = l; v[i++] = tid;
-        v[i++] = p3[0]; v[i++] = p3[1]; v[i++] = p3[2]; v[i++] = 0; v[i++] = 0; v[i++] = l; v[i++] = l; v[i++] = tid;
+        v[i++] = p0[0]; v[i++] = p0[1]; v[i++] = p0[2]; v[i++] = 0; v[i++] = 0; v[i++] = l; v[i++] = l; v[i++] = tid;
+        v[i++] = p2[0]; v[i++] = p2[1]; v[i++] = p2[2]; v[i++] = 1; v[i++] = 1; v[i++] = l; v[i++] = l; v[i++] = tid;
+        v[i++] = p3[0]; v[i++] = p3[1]; v[i++] = p3[2]; v[i++] = 0; v[i++] = 1; v[i++] = l; v[i++] = l; v[i++] = tid;
         
         return i;
     }
@@ -94,9 +100,8 @@ public class ItemEntity extends Entity {
         
         float hover = (float) Math.sin(lifeTime / 10.0f + bobOffset) * 0.1f;
         Matrix4f model = new Matrix4f()
-            .translate(position.x, position.y + hover + 0.25f, position.z) // +0.25 to center visual
+            .translate(position.x, position.y + hover + 0.25f, position.z)
             .rotate((float) Math.toRadians(rotation.y), 0, 1, 0);
-            // No scale needed, vertices are pre-scaled to 0.25 radius
             
         renderer.renderMesh(mesh, model);
     }

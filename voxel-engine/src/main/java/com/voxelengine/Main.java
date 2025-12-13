@@ -4,6 +4,7 @@ import com.voxelengine.audio.SoundManager;
 import com.voxelengine.core.GameLoop;
 import com.voxelengine.core.Input;
 import com.voxelengine.core.Window;
+import com.voxelengine.entity.AABB;
 import com.voxelengine.entity.EntityManager;
 import com.voxelengine.entity.ItemEntity;
 import com.voxelengine.entity.PhysicsEngine;
@@ -134,44 +135,77 @@ public class Main {
         Vector3f dir = new Vector3f();
         cam.getViewMatrix().positiveZ(dir).negate();
         
-        float step = 0.1f;
-        for (float dist = 0; dist < 5.0f; dist += step) {
-            pos.add(dir.x * step, dir.y * step, dir.z * step);
-            
-            int x = (int) Math.floor(pos.x);
-            int y = (int) Math.floor(pos.y);
-            int z = (int) Math.floor(pos.z);
+        float maxDist = 5.0f;
+        float closestDist = maxDist;
+        int hitX = 0, hitY = 0, hitZ = 0;
+        int sideX = 0, sideY = 0, sideZ = 0; 
+        boolean hitFound = false;
+
+        float step = 0.05f;
+        Vector3f checkPos = new Vector3f();
+        
+        for (float d = 0; d < maxDist; d += step) {
+            checkPos.set(dir).mul(d).add(pos);
+            int x = (int) Math.floor(checkPos.x);
+            int y = (int) Math.floor(checkPos.y);
+            int z = (int) Math.floor(checkPos.z);
             
             Block b = world.getBlock(x, y, z);
             if (b != Block.AIR && !b.isWater()) {
-                if (destroy) {
-                    if (b.getSoundType() != null) soundManager.play(b.getSoundType().breakSound);
+                byte meta = world.getMetadata(x, y, z);
+                AABB box = b.getSelectionBox(x, y, z, meta);
+                if (box != null) {
+                    AABB worldBox = box.offset(x, y, z);
+                    float dist = worldBox.rayIntersect(pos, dir);
                     
-                    ItemStack drop = new ItemStack(b, 1);
-                    // Pass atlas to ItemEntity constructor
-                    entityManager.addEntity(new ItemEntity(drop, x + 0.5f, y + 0.5f, z + 0.5f, atlas));
-                    
-                    world.setBlock(x, y, z, Block.AIR);
-                    logic.updateNetwork(x, y, z); 
-                    return;
-                } else {
-                    pos.sub(dir.x * step, dir.y * step, dir.z * step);
-                    int px = (int) Math.floor(pos.x);
-                    int py = (int) Math.floor(pos.y);
-                    int pz = (int) Math.floor(pos.z);
-                    
-                    ItemStack toPlace = inventory.getSelectedStack();
-                    if (toPlace.isEmpty()) return;
-
-                    double distToPlayer = pos.distance(cam.getPosition());
-                    if (distToPlayer > 1.0) {
-                        if (toPlace.getBlock().getSoundType() != null) soundManager.play(toPlace.getBlock().getSoundType().placeSound);
+                    if (dist != -1.0f && dist < closestDist) {
+                        closestDist = dist;
+                        hitX = x; hitY = y; hitZ = z;
+                        hitFound = true;
                         
-                        world.setBlock(px, py, pz, toPlace.getBlock());
-                        inventory.useSelectedItem();
-                        logic.updateNetwork(px, py, pz);
+                        Vector3f prev = new Vector3f(dir).mul(dist - 0.01f).add(pos);
+                        sideX = (int)Math.floor(prev.x);
+                        sideY = (int)Math.floor(prev.y);
+                        sideZ = (int)Math.floor(prev.z);
+                        break; 
                     }
-                    return;
+                }
+            }
+        }
+
+        if (hitFound) {
+            // FIX: Interaction Logic (Lever)
+            Block target = world.getBlock(hitX, hitY, hitZ);
+            if (!destroy && target == Block.LEVER) {
+                byte meta = world.getMetadata(hitX, hitY, hitZ);
+                meta ^= 4; // Toggle Bit 2 (Active)
+                world.setMetadata(hitX, hitY, hitZ, meta);
+                logic.updateNetwork(hitX, hitY, hitZ);
+                if (target.getSoundType() != null) soundManager.play("lever.wav"); // Assuming sound exists
+                return;
+            }
+
+            if (destroy) {
+                if (target.getSoundType() != null) soundManager.play(target.getSoundType().breakSound);
+                
+                ItemStack drop = new ItemStack(target, 1);
+                entityManager.addEntity(new ItemEntity(drop, hitX + 0.5f, hitY + 0.5f, hitZ + 0.5f, atlas));
+                
+                world.setBlock(hitX, hitY, hitZ, Block.AIR);
+                logic.updateNetwork(hitX, hitY, hitZ); 
+            } else {
+                ItemStack toPlace = inventory.getSelectedStack();
+                if (toPlace.isEmpty()) return;
+
+                AABB playerBox = new AABB(pos.x-0.3f, pos.y-1.5f, pos.z-0.3f, pos.x+0.3f, pos.y+0.3f, pos.z+0.3f);
+                AABB blockBox = new AABB(sideX, sideY, sideZ, sideX+1, sideY+1, sideZ+1);
+                
+                if (!playerBox.intersects(blockBox)) {
+                    if (toPlace.getBlock().getSoundType() != null) soundManager.play(toPlace.getBlock().getSoundType().placeSound);
+                    
+                    world.setBlock(sideX, sideY, sideZ, toPlace.getBlock());
+                    inventory.useSelectedItem();
+                    logic.updateNetwork(sideX, sideY, sideZ);
                 }
             }
         }

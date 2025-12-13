@@ -34,7 +34,7 @@ public class UIManager {
     private int crosshairTexture;
     private int slotTexture;
     private int selectorTexture;
-    private int hotbarTexture; // FIXED: Variable was missing
+    private int hotbarTexture; 
     
     private final Inventory inventory;
     private final TextureAtlas textureAtlas;
@@ -45,6 +45,11 @@ public class UIManager {
     // UI State
     public boolean isChatOpen = false;
     public boolean isInventoryOpen = false;
+    
+    // Input Handling State
+    private boolean mouseWasDown = false;
+    private int currentWidth = 1280;
+    private int currentHeight = 720;
 
     public UIManager(Inventory inventory, TextureAtlas textureAtlas, World world, EntityManager entityMgr) {
         this.inventory = inventory;
@@ -74,7 +79,7 @@ public class UIManager {
         crosshairTexture = loadTexture("assets/ui/crosshair.png");
         slotTexture = loadTexture("assets/ui/slot.png");
         selectorTexture = loadTexture("assets/ui/selector.png");
-        hotbarTexture = loadTexture("assets/ui/hotbar.png"); // FIXED: Load hotbar
+        hotbarTexture = loadTexture("assets/ui/hotbar.png");
     }
     
     public void handleInput() {
@@ -86,7 +91,22 @@ public class UIManager {
                 Input.stopTextInput();
                 Input.setCursorLocked(true);
             }
+        } else if (isInventoryOpen) {
+            // Handle Clicking in Inventory
+            if (Input.isMouseButtonDown(0)) { // Left Click
+                if (!mouseWasDown) {
+                    float mx = (float) Input.getMouseX();
+                    // Convert top-down mouse to bottom-up OpenGL coords
+                    float my = (float) currentHeight - (float) Input.getMouseY(); 
+                    
+                    containerScreen.handleMouseClick(mx, my, currentWidth, currentHeight, 0);
+                    mouseWasDown = true;
+                }
+            } else {
+                mouseWasDown = false;
+            }
         } else {
+            // Open Chat
             if (Input.isKeyDown(GLFW.GLFW_KEY_SLASH)) { 
                 isChatOpen = true;
                 Input.startTextInput();
@@ -98,9 +118,15 @@ public class UIManager {
     public void toggleInventory() {
         isInventoryOpen = !isInventoryOpen;
         Input.setCursorLocked(!isInventoryOpen);
+        
+        // If closing, ensure we drop held item or put it back?
+        // For now, it stays on cursor, simple logic.
     }
 
     public void render(int windowWidth, int windowHeight) {
+        this.currentWidth = windowWidth;
+        this.currentHeight = windowHeight;
+        
         orthoProjection.identity().ortho(0, windowWidth, 0, windowHeight, -1, 1);
         
         glDisable(GL_DEPTH_TEST);
@@ -113,14 +139,16 @@ public class UIManager {
         shader.setUniform("uView", new Matrix4f());
         
         // ------------------------------------------------
-        // 1. Full Screen Interfaces
+        // 1. Full Screen Interfaces (Inventory)
         // ------------------------------------------------
         if (isInventoryOpen) {
-            containerScreen.render(shader, windowWidth, windowHeight, orthoProjection);
+            float mx = (float) Input.getMouseX();
+            float my = (float) windowHeight - (float) Input.getMouseY();
+            containerScreen.render(shader, windowWidth, windowHeight, orthoProjection, mx, my);
         }
         
         // ------------------------------------------------
-        // 2. HUD (Hotbar, Crosshair)
+        // 2. HUD (Hotbar, Crosshair) - Only if Inventory Closed
         // ------------------------------------------------
         if (!isInventoryOpen) {
             renderHUD(windowWidth, windowHeight);
@@ -171,7 +199,6 @@ public class UIManager {
         float barHeight = 22 * scale;
         float barY = 10 + (barHeight / 2.0f);
         
-        // FIX: Ensure pure white color so it's fully lit
         shader.setUniform("uColorMod", new Vector4f(1.0f, 1.0f, 1.0f, 1.0f)); 
         
         Matrix4f hotbarModel = new Matrix4f()
@@ -184,7 +211,6 @@ public class UIManager {
         // 3. Items (Icons)
         glBindTexture(GL_TEXTURE_2D, textureAtlas.getTextureId());
         shader.setUniform("uUVScale", 1.0f / 16.0f); // Atlas Mode
-        // FIX: Full Brightness for items
         shader.setUniform("uColorMod", new Vector4f(1.0f, 1.0f, 1.0f, 1.0f)); 
         
         float startX = centerX - (barWidth / 2.0f) + (3 * scale);
@@ -196,13 +222,16 @@ public class UIManager {
             Block item = stack.getBlock();
             
             if (item != Block.AIR) {
-                int index = textureAtlas.getIndex(item.name().toLowerCase(), Direction.SOUTH);
+                String iconName = item.getItemIcon();
+                if (iconName == null) iconName = item.name().toLowerCase();
+                
+                int index = textureAtlas.getIndex(iconName, Direction.SOUTH);
                 float col = index % 16;
                 float row = index / 16;
                 shader.setUniform("uUVOffset", new Vector2f(col / 16.0f, row / 16.0f));
                 
-                float itemSize = 16 * scale; 
-                float itemX = startX + (i * slotStride) + (itemSize / 2.0f);
+                float itemSize = 16 * scale * 0.7f; 
+                float itemX = startX + (i * slotStride) + (20*scale/2.0f); 
                 
                 Matrix4f iconModel = new Matrix4f()
                     .translate(itemX, itemY, 0)
@@ -221,10 +250,19 @@ public class UIManager {
         
         int selected = inventory.getSelectedSlot();
         float selSize = 24 * scale;
-        float selX = (centerX - (barWidth / 2.0f)) + (selected * 20 * scale) + (selSize / 2.0f) - (1 * scale);
+        // Align selector to the specific slot
+        // Hotbar Left edge + (Index * Stride) + Offset for selector being bigger than slot
+        float selX = (centerX - (barWidth / 2.0f)) + (selected * 20 * scale) + (20*scale/2.0f) - (1 * scale);
+        // Correct centering logic: startX points to left edge of slot 0.
+        // Let's use the exact itemX logic but for selector width
+        float selCenter = startX + (selected * slotStride) + (20*scale/2.0f) - (1.5f*scale); // Tuning
+        
+        // Re-calibrated Selector X:
+        // Start of Hotbar + (Index * 20 * scale) + Half-Selector - Padding
+        float finalSelX = (centerX - (barWidth / 2.0f)) + (selected * 20 * scale) + (12 * scale) - (1 * scale);
         
         Matrix4f selModel = new Matrix4f()
-            .translate(selX, barY, 0)
+            .translate(finalSelX, barY, 0)
             .scale(selSize / 2.0f, selSize / 2.0f, 1);
             
         shader.setUniform("uModel", selModel);
@@ -235,12 +273,9 @@ public class UIManager {
             ItemStack stack = inventory.getStack(i);
             if (stack.getCount() > 1) {
                 String text = String.valueOf(stack.getCount());
-                float itemSize = 16 * scale; 
-                float itemX = startX + (i * slotStride) + (itemSize / 2.0f);
-                
-                // Bottom right corner
-                float textX = itemX + (itemSize * 0.1f); 
-                float textY = itemY - (itemSize * 0.25f);
+                float itemX = startX + (i * slotStride) + (20*scale/2.0f);
+                float textX = itemX; 
+                float textY = itemY - (8 * scale);
                 
                 fontRenderer.drawText(text, textX, textY, 1.0f, orthoProjection);
             }
@@ -271,6 +306,7 @@ public class UIManager {
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
                 STBImage.stbi_image_free(img);
             } else {
+                // Pink Fallback
                 ByteBuffer pink = stack.malloc(4 * 16 * 16);
                 for(int i=0; i<16*16; i++) pink.putInt(0xFF00FFFF);
                 pink.flip();

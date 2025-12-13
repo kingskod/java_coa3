@@ -48,7 +48,7 @@ public class Window {
             glViewport(0, 0, w, h);
         });
 
-        Input.init(windowHandle);
+        Input.init(windowHandle, this.width, this.height);
 
         glfwMakeContextCurrent(windowHandle);
         glfwSwapInterval(1); // Enable V-Sync

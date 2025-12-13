@@ -25,14 +25,13 @@ public class AABB {
                this.minZ < other.maxZ && this.maxZ > other.minZ;
     }
 
-    // Moves this AABB in place
     public void move(float x, float y, float z) {
         this.minX += x; this.maxX += x;
         this.minY += y; this.maxY += y;
         this.minZ += z; this.maxZ += z;
     }
     
-    // Returns a NEW AABB offset by the given amount (Used for converting local block box to world box)
+    // Returns a NEW AABB offset by the given amount
     public AABB offset(float x, float y, float z) {
         return new AABB(minX + x, minY + y, minZ + z, maxX + x, maxY + y, maxZ + z);
     }
@@ -55,6 +54,33 @@ public class AABB {
         return new AABB(nx, ny, nz, mx, my, mz);
     }
     
+    /**
+     * Checks if a ray intersects this AABB.
+     * Required for precise Block Selection.
+     * @param origin Ray origin
+     * @param dir Ray direction (normalized)
+     * @return Distance to intersection, or -1 if missed
+     */
+    public float rayIntersect(Vector3f origin, Vector3f dir) {
+        float t1 = (minX - origin.x) / dir.x;
+        float t2 = (maxX - origin.x) / dir.x;
+        float t3 = (minY - origin.y) / dir.y;
+        float t4 = (maxY - origin.y) / dir.y;
+        float t5 = (minZ - origin.z) / dir.z;
+        float t6 = (maxZ - origin.z) / dir.z;
+
+        float tmin = Math.max(Math.max(Math.min(t1, t2), Math.min(t3, t4)), Math.min(t5, t6));
+        float tmax = Math.min(Math.min(Math.max(t1, t2), Math.max(t3, t4)), Math.max(t5, t6));
+
+        // if tmax < 0, intersection is behind ray origin
+        if (tmax < 0) return -1.0f;
+
+        // if tmin > tmax, ray doesn't intersect
+        if (tmin > tmax) return -1.0f;
+
+        return tmin;
+    }
+
     @Override
     public String toString() {
         return String.format("AABB[%.2f, %.2f, %.2f -> %.2f, %.2f, %.2f]", minX, minY, minZ, maxX, maxY, maxZ);
