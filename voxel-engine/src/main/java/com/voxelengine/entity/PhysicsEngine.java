@@ -5,19 +5,27 @@ import com.voxelengine.world.World;
 import java.util.List;
 
 /**
- * Handles collision resolution and discrete physics steps.
- * Uses robust AABB intersection checking against complex block shapes.
+ * Handles collision resolution and discrete physics steps for entities.
+ * Uses AABB (Axis-Aligned Bounding Box) intersection checking against block colliders.
  */
 public class PhysicsEngine {
 
+    /**
+     * Resolves collisions for an entity against the world geometry.
+     * Applies gravity, friction, and corrects position to prevent clipping.
+     *
+     * @param entity The entity to update.
+     * @param world The game world.
+     * @param dt The delta time.
+     */
     public void resolveCollision(Entity entity, World world, float dt) {
         // Apply Gravity
         entity.velocity.y -= 28.0f * dt;
 
-        // Terminal velocity
+        // Terminal velocity cap
         if (entity.velocity.y < -30) entity.velocity.y = -30;
 
-        // Apply Friction to X/Z
+        // Apply Friction to horizontal movement
         float friction = entity.onGround ? 5.0f : 1.0f;
         entity.velocity.x *= (1.0f - friction * dt);
         entity.velocity.z *= (1.0f - friction * dt);
@@ -39,8 +47,7 @@ public class PhysicsEngine {
             
             // If falling
             if (dy < 0) {
-                // Find the floor Y surface
-                // We need to find the highest block collision box below us
+                // Find the floor Y surface to snap to
                 float floorY = findHighestFloor(world, entityBox, dy);
                 
                 if (floorY != -Float.MAX_VALUE) {
@@ -73,14 +80,14 @@ public class PhysicsEngine {
             entity.velocity.z = 0;
         }
 
-        // Sync position back
+        // Sync entity position back to the bounding box
         entity.position.x = (entityBox.minX + entityBox.maxX) / 2.0f;
         entity.position.y = entityBox.minY;
         entity.position.z = (entityBox.minZ + entityBox.maxZ) / 2.0f;
     }
 
     /**
-     * Checks if the entityBox intersects any solid block collision box in the world.
+     * Checks if the entityBox intersects any solid block collision box in the world within the broadphase area.
      */
     private boolean checkCollision(World world, AABB entityBox, AABB broadPhase) {
         int minX = (int) Math.floor(broadPhase.minX);
@@ -99,7 +106,7 @@ public class PhysicsEngine {
                     
                     for (AABB localBox : boxes) {
                         // Offset local box (0..1) to world position (x..x+1)
-                        // Note: To avoid allocating new AABB, we do math directly here
+                        // Optimization: math directly here to avoid allocating new AABB objects
                         float boxMinX = localBox.minX + x;
                         float boxMinY = localBox.minY + y;
                         float boxMinZ = localBox.minZ + z;
@@ -121,7 +128,7 @@ public class PhysicsEngine {
     
     /**
      * Finds the Y level of the solid surface directly below the entity.
-     * Used for snapping to floors (preventing jitter).
+     * Used for snapping to floors to prevent jittering or sinking.
      */
     private float findHighestFloor(World world, AABB entityBox, float dy) {
         // Expand downward to find candidates

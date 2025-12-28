@@ -5,6 +5,7 @@ import com.voxelengine.world.World;
 
 /**
  * Handles the fixed-timestep game loop.
+ * Manages the timing for update and render cycles to ensure smooth gameplay.
  */
 public class GameLoop {
 
@@ -15,15 +16,30 @@ public class GameLoop {
     private Runnable updateCallback;
     private Runnable renderCallback;
 
+    /**
+     * Creates a new GameLoop attached to the specified window.
+     *
+     * @param window The game window.
+     */
     public GameLoop(Window window) {
         this.window = window;
     }
 
+    /**
+     * Sets the callbacks for the update and render phases.
+     *
+     * @param update The logic update callback (run at fixed time steps).
+     * @param render The rendering callback (run every frame).
+     */
     public void setCallbacks(Runnable update, Runnable render) {
         this.updateCallback = update;
         this.renderCallback = render;
     }
 
+    /**
+     * Starts the game loop.
+     * Runs until the window is closed.
+     */
     public void run() {
         long lastTime = System.nanoTime();
         double accumulator = 0.0;
@@ -33,7 +49,7 @@ public class GameLoop {
             double frameTime = (now - lastTime) / 1_000_000_000.0;
             lastTime = now;
 
-            // Cap frame time to prevent spiral of death
+            // Cap frame time to prevent "spiral of death" where updates can't catch up
             if (frameTime > 0.25) frameTime = 0.25;
 
             accumulator += frameTime;
@@ -43,15 +59,14 @@ public class GameLoop {
                 accumulator -= TICK_DURATION;
             }
 
-            // Alpha for interpolation
-            float alpha = (float) (accumulator / TICK_DURATION);
+            // Alpha for interpolation could be calculated here:
+            // float alpha = (float) (accumulator / TICK_DURATION);
 
-            // In a full implementation, we pass alpha to render for smoothing
             if (renderCallback != null) renderCallback.run();
 
             window.update();
 
-            // Basic performance saver
+            // Simple yield to reduce CPU usage
             try { Thread.sleep(1); } catch (InterruptedException e) {}
         }
     }

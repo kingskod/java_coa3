@@ -7,8 +7,15 @@ import com.voxelengine.world.World;
 
 import java.util.Arrays;
 
+/**
+ * Generates mesh data for chunks using a greedy meshing algorithm.
+ * Optimizes the mesh by combining adjacent faces of the same type into larger quads.
+ */
 public class GreedyMesher {
 
+    /**
+     * A simple growable float array to avoid boxing overhead of ArrayList<Float>.
+     */
     public static class FloatList {
         public float[] data = new float[4096];
         public int size = 0;
@@ -34,6 +41,14 @@ public class GreedyMesher {
         public Mesh transparent;
     }
 
+    /**
+     * Generates the mesh for a specific chunk.
+     *
+     * @param chunk The chunk to mesh.
+     * @param world The world (for neighbor access).
+     * @param atlas The texture atlas (for UV coordinates).
+     * @return A MeshData object containing opaque and transparent meshes.
+     */
     public MeshData generateMesh(Chunk chunk, World world, TextureAtlas atlas) {
         opaqueBuffer.clear();
         transparentBuffer.clear();
@@ -43,7 +58,7 @@ public class GreedyMesher {
             generateFace(dir, chunk, world, atlas);
         }
         
-        // 2. Model Pass (Complex Blocks)
+        // 2. Model Pass (Complex Blocks like fluids, torches, models)
         modelMesher.generate(chunk, world, atlas, opaqueBuffer, transparentBuffer);
 
         MeshData result = new MeshData();
@@ -56,6 +71,7 @@ public class GreedyMesher {
         int uAxis, vAxis, dAxis;
         int uMax, vMax;
 
+        // Determine loop axes based on face direction
         if (dir == Direction.UP || dir == Direction.DOWN) {
             dAxis = 1; uAxis = 0; vAxis = 2; // y, x, z
             uMax = Chunk.WIDTH; vMax = Chunk.WIDTH;
@@ -71,9 +87,12 @@ public class GreedyMesher {
         Block[] mask = new Block[uMax * vMax];
         int[] pos = new int[3];
 
+        // Iterate through slices (depth)
         for (int slice = 0; slice < dMax; slice++) {
             int n = 0;
             pos[dAxis] = slice;
+
+            // Populate mask for this slice
             for (int v = 0; v < vMax; v++) {
                 pos[vAxis] = v;
                 for (int u = 0; u < uMax; u++) {
@@ -85,10 +104,10 @@ public class GreedyMesher {
                     boolean visible = false;
                     
                     if (current != Block.AIR && current.isFullCube()) {
-                        // Render if neighbor is Air, Transparent, or non-full (like water)
+                        // Render if neighbor is Air, Transparent, or non-full
                         if (neighbor == Block.AIR || neighbor.isTransparent() || !neighbor.isFullCube()) {
                             visible = true;
-                            // Fix Z-fighting for adjacent leaves
+                            // Fix Z-fighting for adjacent leaves/glass
                             if (current == neighbor && current.isTransparent()) visible = false; 
                         }
                     }
@@ -96,6 +115,7 @@ public class GreedyMesher {
                 }
             }
 
+            // Greedy meshing on the mask
             n = 0;
             for (int j = 0; j < vMax; j++) {
                 for (int i = 0; i < uMax; ) {
@@ -103,8 +123,10 @@ public class GreedyMesher {
                         Block type = mask[n];
                         int w = 1, h = 1;
 
+                        // Expand width
                         while (i + w < uMax && mask[n + w] == type) w++;
 
+                        // Expand height
                         boolean done = false;
                         while (j + h < vMax) {
                             for (int k = 0; k < w; k++) {
@@ -116,6 +138,7 @@ public class GreedyMesher {
                             h++;
                         }
 
+                        // Generate Quad
                         int[] quadPos = new int[3];
                         quadPos[dAxis] = slice;
                         quadPos[uAxis] = i;
@@ -125,6 +148,7 @@ public class GreedyMesher {
                         int ly = quadPos[1] + dir.y;
                         int lz = quadPos[2] + dir.z;
                         
+                        // Fetch lighting from neighbor
                         int sl, bl;
                         if (chunk.isBounds(lx, ly, lz)) {
                             sl = chunk.getSkyLight(lx, ly, lz);
@@ -135,12 +159,16 @@ public class GreedyMesher {
                         }
 
                         float texIdx = atlas.getIndex(type.name().toLowerCase(), dir);
-                        // Cutout blocks (Leaves/Glass) must write to depth, so use Opaque buffer
+
+                        // Select appropriate buffer (Cutout blocks like leaves go to opaque depth buffer usually, but here handled by texture alpha)
+                        // Actually, leaves/glass usually need alpha testing in opaque pass or sorting in transparent.
+                        // For simplicity: Water/Transparent -> TransparentBuffer. Leaves/Glass -> OpaqueBuffer (with alpha discard).
                         FloatList buffer = (type.isWater() || type.isTransparent()) ? transparentBuffer : opaqueBuffer;
                         if (type == Block.LEAVES || type == Block.GLASS) buffer = opaqueBuffer;
 
                         addQuad(buffer, dir, uAxis, vAxis, quadPos, w, h, sl, bl, texIdx);
 
+                        // Clear mask
                         for (int l = 0; l < h; l++) {
                             for (int k = 0; k < w; k++) {
                                 mask[n + k + l * uMax] = null;
@@ -171,8 +199,7 @@ public class GreedyMesher {
         float[] v2 = new float[]{pos[0], pos[1], pos[2]};
         float[] v3 = new float[]{pos[0], pos[1], pos[2]};
 
-        // FIX: Correct Axis Offset Logic
-        // This shifts the face plane to the far side of the block if direction is positive
+        // Offset vertices to form the face
         if (dir == Direction.EAST) {
              v0[0]++; v1[0]++; v2[0]++; v3[0]++;
         } else if (dir == Direction.UP) {
@@ -192,6 +219,7 @@ public class GreedyMesher {
 
         boolean inverted = (dir == Direction.NORTH || dir == Direction.EAST || dir == Direction.UP);
 
+        // Add 2 Triangles
         if (inverted) {
              addVert(b, v0, uMin, vMin, sLight, bLight, tid);
              addVert(b, v3, uMin, vMax, sLight, bLight, tid);

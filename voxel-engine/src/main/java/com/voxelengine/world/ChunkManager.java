@@ -7,6 +7,9 @@ import org.joml.Vector3f;
 import java.util.*;
 import java.util.concurrent.*;
 
+/**
+ * Manages the loading, unloading, and generation of chunks around the player.
+ */
 public class ChunkManager {
 
     private final Map<Long, Chunk> chunks = new ConcurrentHashMap<>();
@@ -14,10 +17,16 @@ public class ChunkManager {
     private LightingEngine lighting;
     private final World world;
     
-    // Limit threads to 1 to prevent freeze
+    // Thread pool for async chunk loading (limited to 1 to reduce lag spikes)
     private final ExecutorService executor = Executors.newFixedThreadPool(1);
     private final Map<Long, Boolean> pendingChunks = new ConcurrentHashMap<>();
 
+    /**
+     * Creates a new ChunkManager.
+     * Loads the world seed or generates a new one.
+     *
+     * @param world The game world.
+     */
     public ChunkManager(World world) {
         this.world = world;
         long seed = ChunkSerializer.loadSeed();
@@ -35,10 +44,16 @@ public class ChunkManager {
         this.lighting = lighting;
     }
 
+    /**
+     * Retrieves a loaded chunk at the given chunk coordinates.
+     */
     public Chunk getChunk(int chunkX, int chunkZ) {
         return chunks.get(getChunkKey(chunkX, chunkZ));
     }
     
+    /**
+     * Checks if a chunk is currently loaded.
+     */
     public boolean hasChunk(int chunkX, int chunkZ) {
         return chunks.containsKey(getChunkKey(chunkX, chunkZ));
     }
@@ -47,6 +62,12 @@ public class ChunkManager {
         return ((long)x << 32) | (z & 0xFFFFFFFFL);
     }
 
+    /**
+     * Updates the chunk loading around the player's position.
+     * Loads new chunks within render distance and unloads old ones.
+     *
+     * @param playerPos The current position of the player.
+     */
     public void update(Vector3f playerPos) {
         int pChunkX = (int) Math.floor(playerPos.x / 16.0);
         int pChunkZ = (int) Math.floor(playerPos.z / 16.0);
@@ -62,7 +83,7 @@ public class ChunkManager {
                 long key = getChunkKey(cx, cz);
                 
                 if (!chunks.containsKey(key) && !pendingChunks.containsKey(key)) {
-                    // Calc distance for priority
+                    // Calc distance for priority sorting
                     double distSq = x*x + z*z;
                     toLoad.add(new ChunkCoord(cx, cz, distSq));
                 }
@@ -93,7 +114,7 @@ public class ChunkManager {
         for (Chunk c : chunks.values()) {
             int dx = c.chunkX - pChunkX;
             int dz = c.chunkZ - pChunkZ;
-            // Unload if slightly outside render distance to prevent rapid toggle
+            // Unload if slightly outside render distance (Hysteresis to prevent rapid toggle)
             if (Math.abs(dx) > renderDistance + 2 || Math.abs(dz) > renderDistance + 2) {
                 toRemove.add(getChunkKey(c.chunkX, c.chunkZ));
             }
@@ -103,6 +124,10 @@ public class ChunkManager {
         }
     }
     
+    /**
+     * Loads or generates a chunk synchronously.
+     * Designed to be run on a worker thread.
+     */
     private void loadChunkSync(int chunkX, int chunkZ) {
         // 1. Try Load from Disk
         Chunk chunk = ChunkSerializer.loadChunk(chunkX, chunkZ);
@@ -124,20 +149,23 @@ public class ChunkManager {
             // 3. Loaded from disk
             long key = getChunkKey(chunkX, chunkZ);
             chunks.put(key, chunk);
-            // We still need to stitch lighting borders in case neighbors changed
+            // Stitch lighting borders to fix edges
             if (lighting != null) {
                 lighting.stitchChunkBorders(chunkX, chunkZ);
             }
         }
         
         chunk.isDirty = true;
+        // Notify neighbors to rebuild meshes (fixes visible seams)
         markDirty(chunkX + 1, chunkZ);
         markDirty(chunkX - 1, chunkZ);
         markDirty(chunkX, chunkZ + 1);
         markDirty(chunkX, chunkZ - 1);
     }
 
-    // Call this on shutdown
+    /**
+     * Saves all currently loaded chunks to disk.
+     */
     public void saveAll() {
         System.out.println("Saving world...");
         for (Chunk c : chunks.values()) {
@@ -155,7 +183,7 @@ public class ChunkManager {
         return chunks.values();
     }
     
-    // Helper record
+    // Helper record for sorting load priority
     private static class ChunkCoord {
         int x, z;
         double dist;

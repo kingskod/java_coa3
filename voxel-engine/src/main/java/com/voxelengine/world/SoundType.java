@@ -1,8 +1,12 @@
 package com.voxelengine.world;
 
+/**
+ * Defines the sound set for a block type.
+ * Specifies the audio files to play for stepping, breaking, and placing actions.
+ */
 public enum SoundType {
     STONE("step.wav", "break.wav", "place.wav"),
-    GRASS("step.wav", "break.wav", "place.wav"), // In real engine, use different files
+    GRASS("step.wav", "break.wav", "place.wav"), // Placeholder: Reuse sounds for now
     WOOD("step.wav", "break.wav", "place.wav"),
     SAND("step.wav", "break.wav", "place.wav"),
     LIQUID("splash.wav", "splash.wav", "splash.wav");

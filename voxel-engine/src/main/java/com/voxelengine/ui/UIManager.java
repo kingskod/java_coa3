@@ -24,17 +24,21 @@ import static org.lwjgl.opengl.GL13.GL_TEXTURE0;
 import static org.lwjgl.opengl.GL13.glActiveTexture;
 import static org.lwjgl.opengl.GL30.glGenerateMipmap;
 
+/**
+ * Manages all User Interface rendering and interaction.
+ * Handles the HUD, inventory screens, and chat/command input.
+ */
 public class UIManager {
 
     private final Shader shader;
     private final Mesh quadMesh;
     private final Matrix4f orthoProjection;
     
-    // Textures
+    // UI Texture IDs
     private int crosshairTexture;
     private int slotTexture;
     private int selectorTexture;
-    private int hotbarTexture; // FIXED: Variable was missing
+    private int hotbarTexture;
     
     private final Inventory inventory;
     private final TextureAtlas textureAtlas;
@@ -42,10 +46,18 @@ public class UIManager {
     private final CommandManager commandManager;
     private final ContainerScreen containerScreen;
     
-    // UI State
+    // UI State Flags
     public boolean isChatOpen = false;
     public boolean isInventoryOpen = false;
 
+    /**
+     * Creates the UI Manager.
+     *
+     * @param inventory The player's inventory.
+     * @param textureAtlas The main game texture atlas (for item icons).
+     * @param world The game world.
+     * @param entityMgr The entity manager.
+     */
     public UIManager(Inventory inventory, TextureAtlas textureAtlas, World world, EntityManager entityMgr) {
         this.inventory = inventory;
         this.textureAtlas = textureAtlas;
@@ -54,7 +66,7 @@ public class UIManager {
         this.commandManager = new CommandManager(world, entityMgr, inventory);
         this.containerScreen = new ContainerScreen(inventory, textureAtlas, fontRenderer);
         
-        // Standard Quad (0..1 UVs)
+        // Standard Quad geometry (0..1 UVs)
         float[] vertices = new float[] {
             -1,  1, 0,    0, 0,      1.0f, 1.0f,    0.0f,
             -1, -1, 0,    0, 1,      1.0f, 1.0f,    0.0f, 
@@ -74,9 +86,12 @@ public class UIManager {
         crosshairTexture = loadTexture("assets/ui/crosshair.png");
         slotTexture = loadTexture("assets/ui/slot.png");
         selectorTexture = loadTexture("assets/ui/selector.png");
-        hotbarTexture = loadTexture("assets/ui/hotbar.png"); // FIXED: Load hotbar
+        hotbarTexture = loadTexture("assets/ui/hotbar.png");
     }
     
+    /**
+     * Processes input for UI elements (Chat, Menu toggles).
+     */
     public void handleInput() {
         if (isChatOpen) {
             if (Input.isEnterPressed()) {
@@ -95,11 +110,20 @@ public class UIManager {
         }
     }
     
+    /**
+     * Toggles the inventory screen visibility.
+     */
     public void toggleInventory() {
         isInventoryOpen = !isInventoryOpen;
         Input.setCursorLocked(!isInventoryOpen);
     }
 
+    /**
+     * Renders the UI overlay.
+     *
+     * @param windowWidth Current window width.
+     * @param windowHeight Current window height.
+     */
     public void render(int windowWidth, int windowHeight) {
         orthoProjection.identity().ortho(0, windowWidth, 0, windowHeight, -1, 1);
         
@@ -112,23 +136,17 @@ public class UIManager {
         shader.setUniform("uProjection", orthoProjection);
         shader.setUniform("uView", new Matrix4f());
         
-        // ------------------------------------------------
-        // 1. Full Screen Interfaces
-        // ------------------------------------------------
+        // 1. Full Screen Interfaces (Inventory)
         if (isInventoryOpen) {
             containerScreen.render(shader, windowWidth, windowHeight, orthoProjection);
         }
         
-        // ------------------------------------------------
         // 2. HUD (Hotbar, Crosshair)
-        // ------------------------------------------------
         if (!isInventoryOpen) {
             renderHUD(windowWidth, windowHeight);
         }
         
-        // ------------------------------------------------
         // 3. Chat Overlay
-        // ------------------------------------------------
         if (isChatOpen) {
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, slotTexture); 
@@ -171,7 +189,6 @@ public class UIManager {
         float barHeight = 22 * scale;
         float barY = 10 + (barHeight / 2.0f);
         
-        // FIX: Ensure pure white color so it's fully lit
         shader.setUniform("uColorMod", new Vector4f(1.0f, 1.0f, 1.0f, 1.0f)); 
         
         Matrix4f hotbarModel = new Matrix4f()
@@ -184,7 +201,6 @@ public class UIManager {
         // 3. Items (Icons)
         glBindTexture(GL_TEXTURE_2D, textureAtlas.getTextureId());
         shader.setUniform("uUVScale", 1.0f / 16.0f); // Atlas Mode
-        // FIX: Full Brightness for items
         shader.setUniform("uColorMod", new Vector4f(1.0f, 1.0f, 1.0f, 1.0f)); 
         
         float startX = centerX - (barWidth / 2.0f) + (3 * scale);
@@ -281,6 +297,9 @@ public class UIManager {
         return texId;
     }
     
+    /**
+     * Cleans up UI resources (shaders, meshes).
+     */
     public void cleanup() {
         shader.cleanup();
         quadMesh.cleanup();

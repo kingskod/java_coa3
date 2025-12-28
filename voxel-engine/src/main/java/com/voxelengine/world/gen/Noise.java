@@ -3,18 +3,25 @@ package com.voxelengine.world.gen;
 import java.util.Random;
 
 /**
- * Standard Perlin Noise implementation.
+ * Implementation of Perlin Noise.
+ * Used for generating smooth, natural-looking terrain heightmaps and biomes.
+ * Based on the reference implementation by Ken Perlin.
  */
 public class Noise {
 
     private int[] p = new int[512];
 
+    /**
+     * Initializes the noise generator with a specific seed.
+     *
+     * @param seed The random seed.
+     */
     public Noise(long seed) {
         Random r = new Random(seed);
         int[] permutation = new int[256];
         for (int i = 0; i < 256; i++) permutation[i] = i;
 
-        // Shuffle
+        // Shuffle permutation table
         for (int i = 0; i < 256; i++) {
             int j = r.nextInt(256);
             int temp = permutation[i];
@@ -22,13 +29,21 @@ public class Noise {
             permutation[j] = temp;
         }
 
-        // Duplicate
+        // Duplicate to avoid buffer overflow
         for (int i = 0; i < 256; i++) {
             p[i] = permutation[i];
             p[i + 256] = permutation[i];
         }
     }
 
+    /**
+     * Calculates 3D noise value at the given coordinates.
+     *
+     * @param x X coordinate.
+     * @param y Y coordinate.
+     * @param z Z coordinate.
+     * @return Noise value between -1.0 and 1.0.
+     */
     public double noise(double x, double y, double z) {
         int X = (int) Math.floor(x) & 255;
         int Y = (int) Math.floor(y) & 255;

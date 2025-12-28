@@ -4,12 +4,23 @@ import com.voxelengine.utils.Direction;
 import com.voxelengine.world.Block;
 import com.voxelengine.world.Chunk;
 import com.voxelengine.world.World;
-
-// We use GreedyMesher's FloatList to share the buffer logic
 import com.voxelengine.render.GreedyMesher.FloatList;
 
+/**
+ * Handles meshing for non-standard blocks (models).
+ * Examples: Fluids, Torches, Levers, etc.
+ */
 public class ModelMesher {
 
+    /**
+     * Generates mesh data for complex models within a chunk.
+     *
+     * @param chunk The chunk being meshed.
+     * @param world The world (for context/lighting).
+     * @param atlas The texture atlas.
+     * @param targetOpaque Buffer for opaque geometry.
+     * @param targetTransparent Buffer for transparent geometry.
+     */
     public void generate(Chunk chunk, World world, TextureAtlas atlas, 
                          FloatList targetOpaque, 
                          FloatList targetTransparent) {
@@ -24,7 +35,7 @@ public class ModelMesher {
                     int sl = chunk.getSkyLight(x, y, z);
                     int bl = chunk.getBlockLight(x, y, z);
 
-                    // Choose Buffer
+                    // Choose Buffer based on transparency
                     FloatList buffer = block.isTransparent() || block.isWater() ? targetTransparent : targetOpaque;
                     
                     if (block.isWater()) {
@@ -32,8 +43,7 @@ public class ModelMesher {
                     } else if (block == Block.REDSTONE_TORCH) {
                         renderTorch(block, x, y, z, atlas, buffer, sl, bl);
                     } else {
-                        // Default fallback for wires/levers (Small Box centered in block)
-                        // FIX: Add offsets to x,y,z directly instead of passing x,y,z as separate args
+                        // Default fallback (Small Box centered in block)
                         renderBox(block, 
                                   x + 0.2f, y + 0.0f, z + 0.2f,   // Min
                                   x + 0.8f, y + 0.2f, z + 0.8f,   // Max
@@ -81,7 +91,7 @@ public class ModelMesher {
     }
 
     private void renderTorch(Block block, int x, int y, int z, TextureAtlas atlas, FloatList buffer, int sl, int bl) {
-        // Torch centered
+        // Torch model (centered vertical stick)
         renderBox(block, x + 0.4375f, y, z + 0.4375f, x + 0.5625f, y + 0.6f, z + 0.5625f, atlas, buffer, sl, bl);
     }
 
@@ -107,6 +117,7 @@ public class ModelMesher {
         
         float[][] v = new float[4][3];
         
+        // Define quad vertices based on direction
         if (dir == Direction.UP || dir == Direction.DOWN) {
             v[0] = new float[]{x0, y0, z0};
             v[1] = new float[]{x1, y0, z0};

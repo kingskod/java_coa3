@@ -8,15 +8,18 @@ import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
+/**
+ * Manages game logic updates, including redstone circuits and scheduled block events.
+ */
 public class LogicSystem {
 
     private final World world;
     private final FluidSimulator fluidSimulator;
     
-    // Instant Updates (Wires)
+    // Queue for instant updates (e.g., Redstone Wire propagation)
     private final Queue<Node> updateQueue = new ConcurrentLinkedQueue<>();
     
-    // Delayed Updates (Water, Torches, Repeaters)
+    // Queue for delayed updates (e.g., Water flow, Redstone Torches)
     private final PriorityQueue<ScheduledTick> tickQueue = new PriorityQueue<>();
     private long currentTick = 0;
 
@@ -26,6 +29,11 @@ public class LogicSystem {
     }
 
     // --- Tick Engine ---
+
+    /**
+     * Advances the logic system by one tick.
+     * Processes scheduled events and redstone updates.
+     */
     public void tick() {
         currentTick++;
         
@@ -37,7 +45,7 @@ public class LogicSystem {
 
             Block current = world.getBlock(tick.x, tick.y, tick.z);
             
-            // Validate block is still there
+            // Validate block is still the same (prevent ghost updates)
             if (current == tick.block) {
                 if (current.isWater()) {
                     fluidSimulator.update(tick.x, tick.y, tick.z, current);
@@ -50,19 +58,33 @@ public class LogicSystem {
         processRedstoneQueue();
     }
 
+    /**
+     * Schedules a block update for a future tick.
+     *
+     * @param x World X.
+     * @param y World Y.
+     * @param z World Z.
+     * @param block The block type expecting the update.
+     * @param delay Ticks to wait before execution.
+     */
     public void scheduleTick(int x, int y, int z, Block block, int delay) {
         tickQueue.add(new ScheduledTick(x, y, z, block, currentTick + delay));
     }
 
     // --- Redstone Engine ---
+
+    /**
+     * Triggers a redstone network update starting at the given coordinate.
+     */
     public void updateNetwork(int x, int y, int z) {
         updateQueue.add(new Node(x, y, z));
-        // Also check neighbors logic state
+        // Also check direct logic components
         LogicGate.evaluate(world, this, x, y, z, world.getBlock(x, y, z));
     }
 
     private void processRedstoneQueue() {
         int ops = 0;
+        // Limit operations per tick to prevent infinite loops/lag
         while (!updateQueue.isEmpty() && ops < 1000) {
             Node node = updateQueue.poll();
             ops++;
@@ -70,7 +92,9 @@ public class LogicSystem {
             if (!world.isLoaded(node.x, node.z)) continue;
 
             Block block = world.getBlock(node.x, node.y, node.z);
-            int currentSignal = world.getBlockLight(node.x, node.y, node.z); // Redstone uses LightMap channel
+            int currentSignal = world.getBlockLight(node.x, node.y, node.z); // Redstone uses LightMap channel 2 (conceptually)
+            // Note: For this engine, we reuse BlockLight for redstone signal to simplify visualization.
+
             int newSignal = 0;
 
             if (block == Block.WIRE) {
@@ -83,7 +107,7 @@ public class LogicSystem {
                     if (nb.isPowerSource()) {
                         maxInput = 15;
                     } 
-                    // Wires
+                    // Wires (Decay)
                     else if (nb == Block.WIRE) {
                         int val = world.getBlockLight(node.x + d[0], node.y + d[1], node.z + d[2]);
                         if (val > maxInput) maxInput = val;
@@ -110,14 +134,14 @@ public class LogicSystem {
                     
                     updateQueue.add(new Node(nx, ny, nz));
                     
-                    // Check logic components nearby (Torches need to know wire changed)
+                    // Notify logic gates
                     Block nb = world.getBlock(nx, ny, nz);
                     if (nb.isLogicGate()) {
                         LogicGate.evaluate(world, this, nx, ny, nz, nb);
                     }
                 }
                 
-                // Interaction (Lamps)
+                // Interaction (e.g. Lamps)
                 if (block == Block.REDSTONE_LAMP_OFF && newSignal > 0) {
                     world.setBlock(node.x, node.y, node.z, Block.REDSTONE_LAMP_ON);
                 } else if (block == Block.REDSTONE_LAMP_ON && newSignal == 0) {

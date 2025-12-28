@@ -5,6 +5,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * Represents the different types of blocks in the game.
+ * Each enum constant defines the properties of a block type, such as transparency, solidity, and sound.
+ */
 public enum Block {
     AIR(0, true, false, false, null, true),
     STONE(1, false, true, false, SoundType.STONE, true),
@@ -18,12 +22,12 @@ public enum Block {
     // Fluids
     WATER(8, true, false, false, SoundType.LIQUID, false), 
     
-    // Transparency / Models
+    // Transparent / Model Blocks
     LEAVES(9, true, true, false, SoundType.GRASS, true),
     LOG(10, false, true, false, SoundType.WOOD, true),
     GLASS(11, true, true, false, SoundType.STONE, true),
     
-    // Logic
+    // Logic Components
     REDSTONE_LAMP_OFF(12, false, true, false, SoundType.STONE, true),
     REDSTONE_LAMP_ON(13, false, true, true, SoundType.STONE, true),
     WIRE(14, true, false, false, SoundType.STONE, false), 
@@ -31,12 +35,12 @@ public enum Block {
     LEVER(16, true, false, false, SoundType.WOOD, false), 
     REPEATER(17, true, true, false, SoundType.STONE, false), 
     COMPARATOR(18, true, true, false, SoundType.STONE, false),
-    REDSTONE_TORCH_OFF(28, true, false, false, SoundType.WOOD, false), // NEW
+    REDSTONE_TORCH_OFF(28, true, false, false, SoundType.WOOD, false),
     
     // Ores
     DIAMOND_ORE(19, false, true, false, SoundType.STONE, true),
     
-    // Fluid Levels
+    // Fluid Levels (for simulating flow)
     WATER_SOURCE(20, true, false, false, SoundType.LIQUID, false), 
     WATER_6(21, true, false, false, SoundType.LIQUID, false),
     WATER_5(22, true, false, false, SoundType.LIQUID, false),
@@ -72,37 +76,70 @@ public enum Block {
     public SoundType getSoundType() { return soundType; }
     public boolean isFullCube() { return fullCube; }
 
+    /**
+     * Gets the emitted light level of the block.
+     * @return 0-15 (15 is brightest).
+     */
     public int getLightLevel() {
         return (this == REDSTONE_LAMP_ON || this == REDSTONE_TORCH) ? 15 : 0;
     }
 
+    /**
+     * Checks if the block is a source of redstone power.
+     */
     public boolean isPowerSource() {
         return this == REDSTONE_TORCH || this == LEVER || this == REDSTONE_LAMP_ON;
     }
 
+    /**
+     * Checks if the block is a complex logic component (gate).
+     */
     public boolean isLogicGate() {
         return this == REPEATER || this == COMPARATOR || this == REDSTONE_TORCH || this == REDSTONE_TORCH_OFF;
     }
     
+    /**
+     * Checks if the block is any form of water.
+     */
     public boolean isWater() {
         return this.id >= 20 && this.id <= 27 || this == WATER;
     }
     
+    /**
+     * Gets the fluid level for water blocks.
+     * @return 7 for source, declining for flowing blocks, or -1 if not water.
+     */
     public int getWaterLevel() {
         if (this == WATER_SOURCE || this == WATER) return 7;
         if (this.id >= 21 && this.id <= 27) return 7 - (this.id - 20); 
         return -1;
     }
     
+    /**
+     * Gets the base name used for looking up textures.
+     */
     public String getItemTextureName() {
         return this.name().toLowerCase();
     }
     
+    /**
+     * Gets the opacity factor for lighting calculations.
+     * @return 1.0f for opaque blocks, 0.0f for transparent.
+     */
     public float getOpacity() {
         if (this.transparent || !this.fullCube) return 0.0f;
         return 1.0f; 
     }
 
+    /**
+     * Gets the collision bounding boxes for this block at a specific location.
+     *
+     * @param x World X.
+     * @param y World Y.
+     * @param z World Z.
+     * @param metadata Block metadata.
+     * @return A list of AABBs (Axis Aligned Bounding Boxes).
+     */
     public List<AABB> getColliders(int x, int y, int z, byte metadata) {
         if (!solid) return EMPTY_AABB;
         if (isWater()) return EMPTY_AABB;
@@ -110,7 +147,7 @@ public enum Block {
 
         if (fullCube) return FULL_CUBE_AABB; 
         
-        // Placeholder for future slab logic
+        // Placeholder for future slab or model-specific collisions
         return FULL_CUBE_AABB;
     }
 
@@ -119,6 +156,12 @@ public enum Block {
         for (Block b : values()) CACHE[b.id] = b;
     }
 
+    /**
+     * Retrieves a Block by its numerical ID.
+     *
+     * @param id The byte ID.
+     * @return The Block constant, or AIR if invalid.
+     */
     public static Block getById(byte id) {
         if (id < 0 || id >= CACHE.length || CACHE[id] == null) return AIR;
         return CACHE[id];

@@ -6,11 +6,16 @@ import com.voxelengine.world.World;
 import java.util.LinkedList;
 import java.util.Queue;
 
+/**
+ * Manages lighting calculations for the world.
+ * Handles propagation of sky light (sunlight) and block light (torches, lava, etc.).
+ * Uses a breadth-first search (BFS) approach to propagate light levels.
+ */
 public class LightingEngine {
     
     private final World world;
     
-    // Separate queues to handle independent propagation
+    // Queues for BFS propagation and removal
     private final Queue<LightNode> skyLightQueue = new LinkedList<>();
     private final Queue<LightNode> skyRemovalQueue = new LinkedList<>();
     
@@ -22,8 +27,12 @@ public class LightingEngine {
     }
 
     /**
-     * Entry point for block updates (Place/Break).
-     * Synchronized to prevent crash when interacting while chunks load.
+     * Updates lighting around a specific block change.
+     * Synchronized to ensure thread safety during concurrent modifications.
+     *
+     * @param x World X coordinate.
+     * @param y World Y coordinate.
+     * @param z World Z coordinate.
      */
     public synchronized void updateBlock(int x, int y, int z) {
         Block block = world.getBlock(x, y, z);
@@ -32,8 +41,11 @@ public class LightingEngine {
     }
 
     /**
-     * Initial calculation for new chunks.
-     * Synchronized for thread safety.
+     * Calculates the initial sky light for a newly generated chunk.
+     * Propagates sunlight downwards until it hits a non-transparent block.
+     *
+     * @param chunkX The chunk X coordinate.
+     * @param chunkZ The chunk Z coordinate.
      */
     public synchronized void calculateInitialLighting(int chunkX, int chunkZ) {
         int cx = chunkX * 16;
@@ -63,7 +75,11 @@ public class LightingEngine {
     }
 
     /**
-     * Scans borders. Synchronized for thread safety.
+     * Stitches lighting across chunk borders to ensure seamless transitions.
+     * Checks neighbors at the edges and propagates light if needed.
+     *
+     * @param chunkX The chunk X coordinate.
+     * @param chunkZ The chunk Z coordinate.
      */
     public synchronized void stitchChunkBorders(int chunkX, int chunkZ) {
         int cx = chunkX * 16;

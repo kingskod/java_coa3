@@ -20,19 +20,30 @@ import com.voxelengine.world.World;
 import org.joml.Vector3f;
 import static org.lwjgl.glfw.GLFW.*;
 
+/**
+ * The main entry point for the Voxel Engine.
+ * Initializes the window, game loop, and all core subsystems.
+ */
 public class Main {
     
-    // UI State
+    /** Flag to track if the inventory UI is currently open. */
     private static boolean inventoryOpen = false;
+
+    /** Flag to track if the 'E' key was pressed in the previous frame. */
     private static boolean ePressed = false;
 
+    /**
+     * Main method to start the application.
+     *
+     * @param args Command line arguments (not used).
+     */
     public static void main(String[] args) {
         com.voxelengine.world.ChunkSerializer.WORLD_NAME = "world1"; 
         AssetGenerator.verifyAndGenerateAssets();
         Window window = new Window("Voxel Engine - " + com.voxelengine.world.ChunkSerializer.WORLD_NAME, 1280, 720);
         window.init();
 
-        // Sound System
+        // Initialize Sound System
         SoundManager soundManager = new SoundManager();
         soundManager.loadSound("step.wav", "step.wav");
         soundManager.loadSound("break.wav", "break.wav");
@@ -125,6 +136,17 @@ public class Main {
         window.cleanup();
     }
     
+    /**
+     * Performs a raycast from the camera's perspective to interact with the world.
+     *
+     * @param world The game world.
+     * @param cam The player's camera.
+     * @param destroy If true, destroys the block looked at; otherwise places a block.
+     * @param inventory The player's inventory.
+     * @param logic The logic system for updating network/state.
+     * @param entityManager The entity manager for spawning drops.
+     * @param soundManager The sound manager for playing effects.
+     */
     private static void raycast(World world, Camera cam, boolean destroy, Inventory inventory, LogicSystem logic, EntityManager entityManager, SoundManager soundManager) {
         Vector3f pos = new Vector3f(cam.getPosition());
         Vector3f dir = new Vector3f();

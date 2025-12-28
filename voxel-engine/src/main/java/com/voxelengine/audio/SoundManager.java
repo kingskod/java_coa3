@@ -24,6 +24,10 @@ import java.util.Map;
 import static org.lwjgl.openal.AL10.*;
 import static org.lwjgl.openal.ALC10.*;
 
+/**
+ * Manages the OpenAL audio context and plays sounds.
+ * Handles loading WAV files and managing sound sources.
+ */
 public class SoundManager {
 
     private long device;
@@ -31,10 +35,19 @@ public class SoundManager {
     private final Map<String, Integer> soundBuffers = new HashMap<>();
     private final Map<String, Integer> sources = new HashMap<>();
 
+    /**
+     * Creates a new SoundManager and initializes the audio device.
+     */
     public SoundManager() {
         init();
     }
 
+    /**
+     * Initializes the OpenAL device and context.
+     * Sets up the listener's default position.
+     *
+     * @throws RuntimeException If the OpenAL library is not supported.
+     */
     private void init() {
         // Open default device
         String defaultDeviceName = alcGetString(0, ALC_DEFAULT_DEVICE_SPECIFIER);
@@ -57,7 +70,10 @@ public class SoundManager {
     }
 
     /**
-     * Loads a WAV file from resources into an OpenAL buffer.
+     * Loads a WAV file from the classpath resources into an OpenAL buffer.
+     *
+     * @param name The unique identifier for the sound.
+     * @param path The file path relative to /assets/sounds/.
      */
     public void loadSound(String name, String path) {
         // Load raw bytes
@@ -65,7 +81,7 @@ public class SoundManager {
         int format = -1;
         int samplerate = -1;
         
-        // Custom simple WAV loader since we aren't using external Utils for audio loading
+        // Custom simple WAV loader
         try (InputStream is = SoundManager.class.getResourceAsStream("/assets/sounds/" + path)) {
             if (is == null) {
                 System.err.println("Sound not found: " + path);
@@ -92,8 +108,7 @@ public class SoundManager {
                 format = (channels == 1) ? AL_FORMAT_MONO16 : AL_FORMAT_STEREO16;
             }
             
-            // Offset 44: Data starts (usually, assuming standard PCM)
-            // Ideally we parse chunks, but for AssetGenerator wavs, 44 is standard.
+            // Offset 44: Data starts (standard for these assets)
             buffer.position(44);
             data = buffer.slice();
             
@@ -108,6 +123,11 @@ public class SoundManager {
         }
     }
 
+    /**
+     * Plays a loaded sound by name.
+     *
+     * @param name The identifier of the sound to play.
+     */
     public void play(String name) {
         if (!soundBuffers.containsKey(name)) return;
         
@@ -122,11 +142,13 @@ public class SoundManager {
         
         alSourcePlay(sourceId);
         
-        // Clean up source later? For a simple engine, we assume fire-and-forget or reuse.
-        // A robust engine pools sources. Here we track simply.
+        // Track source for cleanup.
         sources.put(name + "_" + System.nanoTime(), sourceId);
     }
 
+    /**
+     * Cleans up OpenAL resources (buffers, sources, context, and device).
+     */
     public void cleanup() {
         for (int source : sources.values()) {
             alDeleteSources(source);

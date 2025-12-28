@@ -7,12 +7,21 @@ import org.lwjgl.system.MemoryStack;
 
 import static org.lwjgl.opengl.GL20.*;
 
+/**
+ * Manages the compilation, linking, and usage of OpenGL shader programs.
+ */
 public class Shader {
 
     private final int programId;
     private final int vertexId;
     private final int fragmentId;
 
+    /**
+     * Creates a new Shader program from vertex and fragment shader source files.
+     *
+     * @param vertexPath Path to the vertex shader file.
+     * @param fragmentPath Path to the fragment shader file.
+     */
     public Shader(String vertexPath, String fragmentPath) {
         programId = glCreateProgram();
 
@@ -45,13 +54,21 @@ public class Shader {
         return shaderId;
     }
 
+    /**
+     * Installs this program object as part of current rendering state.
+     */
     public void bind() {
         glUseProgram(programId);
     }
 
+    /**
+     * Unbinds the current shader program.
+     */
     public void unbind() {
         glUseProgram(0);
     }
+
+    // --- Uniform Setters ---
 
     public void setUniform(String name, Matrix4f value) {
         int loc = glGetUniformLocation(programId, name);
@@ -85,6 +102,9 @@ public class Shader {
         if (loc != -1) org.lwjgl.opengl.GL20.glUniform4f(loc, value.x, value.y, value.z, value.w);
     }
     
+    /**
+     * Deletes the shader program and detaches shaders.
+     */
     public void cleanup() {
         unbind();
         if (programId != 0) glDeleteProgram(programId);

@@ -2,11 +2,21 @@ package com.voxelengine.ui;
 
 import com.voxelengine.world.Block;
 
+/**
+ * Represents a stack of items in the inventory.
+ * Contains the block type and the quantity.
+ */
 public class ItemStack {
     private Block block;
     private int count;
     public static final int MAX_STACK = 64;
 
+    /**
+     * Creates a new ItemStack.
+     *
+     * @param block The type of block.
+     * @param count The number of items.
+     */
     public ItemStack(Block block, int count) {
         this.block = block;
         this.count = count;
@@ -25,6 +35,8 @@ public class ItemStack {
 
     /**
      * Tries to merge 'other' into this stack.
+     *
+     * @param other The stack to merge from.
      * @return The number of items that COULD NOT be added (remainder).
      */
     public int merge(ItemStack other) {
@@ -39,6 +51,12 @@ public class ItemStack {
         return other.count;
     }
     
+    /**
+     * Splits this stack, removing amount from this stack and returning a new stack.
+     *
+     * @param amount The number of items to split off.
+     * @return The new split stack.
+     */
     public ItemStack split(int amount) {
         int toRemove = Math.min(amount, count);
         this.count -= toRemove;
