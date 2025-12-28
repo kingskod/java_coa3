@@ -20,6 +20,9 @@ import static org.lwjgl.opengl.GL13.GL_TEXTURE0;
 import static org.lwjgl.opengl.GL13.glActiveTexture;
 import static org.lwjgl.opengl.GL30.glGenerateMipmap;
 
+/**
+ * Renders the main container inventory screen (when E is pressed).
+ */
 public class ContainerScreen {
 
     private final Mesh quadMesh;
@@ -47,6 +50,14 @@ public class ContainerScreen {
         this.bgTexture = loadTexture("assets/ui/tab_items.png");
     }
 
+    /**
+     * Renders the inventory screen background and items.
+     *
+     * @param shader The active shader.
+     * @param winWidth Window width.
+     * @param winHeight Window height.
+     * @param ortho Orthographic projection matrix.
+     */
     public void render(Shader shader, int winWidth, int winHeight, Matrix4f ortho) {
         float scale = 2.0f;
         float uiWidth = 176 * scale;
@@ -54,7 +65,7 @@ public class ContainerScreen {
         float startX = (winWidth - uiWidth) / 2.0f;
         float startY = (winHeight - uiHeight) / 2.0f;
 
-        // 1. Background
+        // 1. Render Background
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, bgTexture);
         shader.setUniform("uTexture", 0);
@@ -65,14 +76,15 @@ public class ContainerScreen {
         shader.setUniform("uModel", model);
         quadMesh.render();
         
-        // 2. Items
+        // 2. Render Items
         // Bind Atlas
         glBindTexture(GL_TEXTURE_2D, atlas.getTextureId());
         shader.setUniform("uUVScale", 1.0f / 16.0f);
         
-        // Grid Offsets (Based on Minecraft texture coords)
+        // Grid Offsets (Based on standard inventory texture coordinates)
         float gridX = startX + (7 * scale);
-        // Manual tuning for bottom-left origin
+
+        // Row positions
         float hotbarY = startY + (8 * scale); // Near bottom
         float storageY = startY + (84 * scale); // Middle section
         
@@ -95,22 +107,15 @@ public class ContainerScreen {
         int col = 0;
         int row = 0;
         
-        // Calculate rows based on count
-        // For storage (27 items), we want 3 rows of 9.
-        // We render bottom-up visually? No, slot 9 is top-left.
-        // OpenGL 0,0 is bottom-left.
-        // Row 0 (Slot 9-17) should be at Top of grid.
-        
         for (int i = startSlot; i < endSlot; i++) {
             ItemStack stack = inventory.getStack(i);
             if (!stack.isEmpty()) {
                 // Pos
-                // Logic: Higher row index = Lower Y position
                 float x = startX + (col * slotSize) + padding;
-                float y = startY + ((2 - row) * slotSize) + padding; // Invert row for storage
+                float y = startY + ((2 - row) * slotSize) + padding; // Invert row for storage (Top-down visual, bottom-up coord)
                 
                 if (endSlot == 9) {
-                    // Hotbar is single row
+                    // Hotbar is single row at bottom
                     y = startY + padding;
                 }
                 
@@ -158,7 +163,7 @@ public class ContainerScreen {
     private int loadTexture(String path) {
         int texId = glGenTextures();
         glBindTexture(GL_TEXTURE_2D, texId);
-        // Robust load logic (copy from UIManager)
+
         String finalPath = path;
         File f = new File(path);
         if (!f.exists()) {

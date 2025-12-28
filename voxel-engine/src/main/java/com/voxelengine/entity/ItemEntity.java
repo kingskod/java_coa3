@@ -6,15 +6,27 @@ import com.voxelengine.world.World;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
+/**
+ * Represents a dropped item floating in the world.
+ * Items bob up and down and rotate.
+ */
 public class ItemEntity extends Entity {
 
     private final ItemStack stack;
     private int lifeTime = 0;
-    private int pickupDelay = 40; // 2 seconds before you can pick it up
+    private int pickupDelay = 40; // 2 seconds (at 20tps) before pickup
     private float bobOffset = 0;
 
+    /**
+     * Creates a new ItemEntity.
+     *
+     * @param stack The item stack to drop.
+     * @param x X position.
+     * @param y Y position.
+     * @param z Z position.
+     */
     public ItemEntity(ItemStack stack, float x, float y, float z) {
-        super(x, y, z, 0.25f, 0.25f); // Small hitbox (0.25 block size)
+        super(x, y, z, 0.25f, 0.25f); // Small hitbox
         this.stack = stack;
         
         // Random velocity spread
@@ -33,7 +45,7 @@ public class ItemEntity extends Entity {
         // Apply simple physics
         physics.resolveCollision(this, world, dt);
         
-        // Friction
+        // Ground Friction
         if (onGround) {
             velocity.x *= 0.6f;
             velocity.z *= 0.6f;
@@ -42,8 +54,8 @@ public class ItemEntity extends Entity {
             velocity.z *= 0.98f;
         }
         
-        // Bobbing animation logic
-        rotation.y += 2.0f; // Spin
+        // Rotate
+        rotation.y += 2.0f;
     }
 
     @Override
@@ -61,5 +73,5 @@ public class ItemEntity extends Entity {
 
     public ItemStack getStack() { return stack; }
     public boolean canPickup() { return pickupDelay <= 0; }
-    public boolean isDead() { return lifeTime > 6000; } // Despawn after 5 mins
+    public boolean isDead() { return lifeTime > 6000; } // Despawn after 5 mins (at 20 TPS)
 }

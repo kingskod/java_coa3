@@ -12,13 +12,18 @@ import java.nio.file.Path;
 import java.util.stream.Collectors;
 
 /**
- * Helper class for File I/O operations.
+ * Utility class for File I/O operations.
+ * Provides methods to load resources from the classpath or filesystem and manage directories.
  */
 public class FileUtils {
 
     /**
      * Loads a file from the classpath as a String.
      * Fallback: Checks the local file system (src/main/resources) if not found in classpath.
+     *
+     * @param path The path to the resource.
+     * @return The content of the resource as a String.
+     * @throws RuntimeException If the resource cannot be found or read.
      */
     public static String loadResourceAsString(String path) {
         InputStream is = null;
@@ -54,7 +59,10 @@ public class FileUtils {
     }
 
     /**
-     * Ensures a directory exists.
+     * Ensures that a directory exists, creating it if necessary.
+     *
+     * @param path The path of the directory.
+     * @throws RuntimeException If the directory cannot be created.
      */
     public static void ensureDirectory(Path path) {
         if (!Files.exists(path)) {

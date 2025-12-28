@@ -15,6 +15,10 @@ import static org.lwjgl.opengl.GL11.*;
 import static org.lwjgl.opengl.GL13.GL_TEXTURE0;
 import static org.lwjgl.opengl.GL13.glActiveTexture;
 
+/**
+ * Handles the main rendering pipeline for the game.
+ * Manages shaders, textures, and chunk mesh generation/caching.
+ */
 public class Renderer {
 
     private final Shader shader;
@@ -22,6 +26,7 @@ public class Renderer {
     private final GreedyMesher mesher;
     private Mesh itemMesh; 
     
+    // Cache for chunk meshes to avoid regenerating every frame
     private static class ChunkRenderData {
         Mesh opaque;
         Mesh transparent;
@@ -29,6 +34,9 @@ public class Renderer {
     }
     private final Map<Chunk, ChunkRenderData> chunkMeshes = new HashMap<>();
 
+    /**
+     * Initializes the renderer, shaders, and texture atlas.
+     */
     public Renderer() {
         this.shader = new Shader("assets/shaders/vertex.glsl", "assets/shaders/fragment.glsl");
         this.atlas = new TextureAtlas();
@@ -39,11 +47,21 @@ public class Renderer {
     
     public TextureAtlas getTextureAtlas() { return atlas; }
 
+    /**
+     * Renders the world scene.
+     *
+     * @param world The game world.
+     * @param camera The player's camera.
+     */
     public void render(World world, Camera camera) {
         shader.bind();
+
+        // Bind Texture Atlas
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, atlas.getTextureId());
         shader.setUniform("uTexture", 0);
+
+        // Update Matrix Uniforms
         shader.setUniform("uProjection", camera.getProjectionMatrix());
         shader.setUniform("uView", camera.getViewMatrix());
         shader.setUniform("uUVScale", 1.0f);
@@ -55,10 +73,12 @@ public class Renderer {
         long time = world.getTime();
         float timeFactor = (float)time / 24000.0f; // 0.0 to 1.0
         
+        // Calculate ambient daylight brightness
         float daylight = (float)Math.cos(timeFactor * Math.PI * 2) * 0.4f + 0.6f;
         daylight = Math.max(0.2f, daylight);
         shader.setUniform("uDaylightFactor", daylight);
 
+        // Calculate sky color blending
         Vector3f dayColor = new Vector3f(0.5f, 0.7f, 1.0f);
         Vector3f nightColor = new Vector3f(0.05f, 0.05f, 0.1f);
         Vector3f skyColor = new Vector3f();
@@ -67,8 +87,10 @@ public class Renderer {
         
         glClearColor(skyColor.x, skyColor.y, skyColor.z, 1.0f);
 
+        // --- Chunk Mesh Management ---
         Collection<Chunk> activeChunks = world.getChunkManager().getLoadedChunks();
 
+        // Unload meshes for chunks that are no longer active
         Iterator<Map.Entry<Chunk, ChunkRenderData>> it = chunkMeshes.entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry<Chunk, ChunkRenderData> entry = it.next();
@@ -78,6 +100,7 @@ public class Renderer {
             }
         }
 
+        // Generate meshes for new or dirty chunks
         for (Chunk chunk : activeChunks) {
             if (chunk.isDirty || !chunkMeshes.containsKey(chunk)) {
                 GreedyMesher.MeshData data = mesher.generateMesh(chunk, world, atlas);
@@ -91,6 +114,7 @@ public class Renderer {
             }
         }
 
+        // 1. Render Opaque Geometry
         glDisable(GL_BLEND);
         glEnable(GL_DEPTH_TEST);
         for (Chunk chunk : activeChunks) {
@@ -102,9 +126,10 @@ public class Renderer {
             }
         }
 
+        // 2. Render Transparent Geometry
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glDepthMask(false);
+        glDepthMask(false); // Disable depth writing for transparent pass
         for (Chunk chunk : activeChunks) {
             ChunkRenderData crd = chunkMeshes.get(chunk);
             if (crd != null && crd.transparent != null) {
@@ -119,6 +144,12 @@ public class Renderer {
         shader.unbind();
     }
     
+    /**
+     * Renders a single item block (e.g., dropped item).
+     *
+     * @param block The block type to render.
+     * @param model The model matrix for positioning.
+     */
     public void renderItemCube(com.voxelengine.world.Block block, Matrix4f model) {
         shader.bind();
         glActiveTexture(GL_TEXTURE0);
@@ -136,22 +167,32 @@ public class Renderer {
         shader.unbind();
     }
 
+    /**
+     * Cleans up OpenGL resources.
+     */
     public void cleanup() {
         shader.cleanup();
         for (ChunkRenderData m : chunkMeshes.values()) m.cleanup();
         if (itemMesh != null) itemMesh.cleanup();
     }
     
+    // Generates a simple unit cube mesh for dropped items
     private float[] generateCubeVertices() {
         float[] v = new float[288];
         int i = 0;
         float l = 1.0f;
         float t = -1.0f;
+        // Front
         i = addQuad(v, i, -0.5f, -0.5f, 0.5f,  0.5f, -0.5f, 0.5f,  0.5f, 0.5f, 0.5f,  -0.5f, 0.5f, 0.5f, l, t);
+        // Back
         i = addQuad(v, i, 0.5f, -0.5f, -0.5f,  -0.5f, -0.5f, -0.5f,  -0.5f, 0.5f, -0.5f,  0.5f, 0.5f, -0.5f, l, t);
+        // Top
         i = addQuad(v, i, -0.5f, 0.5f, 0.5f,  0.5f, 0.5f, 0.5f,  0.5f, 0.5f, -0.5f,  -0.5f, 0.5f, -0.5f, l, t);
+        // Bottom
         i = addQuad(v, i, -0.5f, -0.5f, -0.5f,  0.5f, -0.5f, -0.5f,  0.5f, -0.5f, 0.5f,  -0.5f, -0.5f, 0.5f, l, t);
+        // Right
         i = addQuad(v, i, 0.5f, -0.5f, 0.5f,  0.5f, -0.5f, -0.5f,  0.5f, 0.5f, -0.5f,  0.5f, 0.5f, 0.5f, l, t);
+        // Left
         i = addQuad(v, i, -0.5f, -0.5f, -0.5f,  -0.5f, -0.5f, 0.5f,  -0.5f, 0.5f, 0.5f,  -0.5f, 0.5f, -0.5f, l, t);
         return v;
     }

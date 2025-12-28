@@ -2,6 +2,10 @@ package com.voxelengine.world;
 
 import com.voxelengine.logic.LogicSystem;
 
+/**
+ * Simulates fluid dynamics for water.
+ * Handles flow logic, spreading, and infinite source generation.
+ */
 public class FluidSimulator {
 
     private final World world;
@@ -13,6 +17,10 @@ public class FluidSimulator {
         this.logic = logic;
     }
 
+    /**
+     * Updates the fluid state at the given position.
+     * Called by LogicSystem when a scheduled fluid tick occurs.
+     */
     public void update(int x, int y, int z, Block block) {
         int level = block.getWaterLevel();
         if (level < 0) return;
@@ -21,7 +29,6 @@ public class FluidSimulator {
         Block below = world.getBlock(x, y - 1, z);
         if (canFlowInto(below)) {
             // Falling water becomes full strength (like a waterfall)
-            // We use WATER_6 (6) to indicate falling, distinct from SOURCE (7)
             setWater(x, y - 1, z, 7); 
             return;
         }
@@ -34,7 +41,7 @@ public class FluidSimulator {
             flowTo(x, y, z - 1, level - 1);
         }
         
-        // 3. Infinite Source Generation
+        // 3. Infinite Source Generation (2 sources create a 3rd)
         if (level < 7 && level > 0) {
             int sources = 0;
             if (isSource(x+1, y, z)) sources++;

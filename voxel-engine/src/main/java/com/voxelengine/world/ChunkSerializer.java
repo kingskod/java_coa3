@@ -6,6 +6,9 @@ import java.nio.file.Paths;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
+/**
+ * Handles saving and loading chunks to/from disk using GZIP compression.
+ */
 public class ChunkSerializer {
 
     public static String WORLD_NAME = "world1";
@@ -19,6 +22,9 @@ public class ChunkSerializer {
         createDir();
     }
     
+    /**
+     * Ensures the save directory exists.
+     */
     public static void createDir() {
         try {
             Files.createDirectories(Paths.get(getSaveDir()));
@@ -31,6 +37,12 @@ public class ChunkSerializer {
         return getSaveDir() + "chunk_" + x + "_" + z + ".dat";
     }
 
+    /**
+     * Saves a chunk to a compressed file.
+     *
+     * @param chunk The chunk to save.
+     * @return True if successful.
+     */
     public static boolean saveChunk(Chunk chunk) {
         if (!chunk.isPopulated) return false; 
         createDir();
@@ -43,7 +55,7 @@ public class ChunkSerializer {
             
             // Data
             out.write(chunk.getBlocksRaw());
-            out.write(chunk.getMetadataRaw()); // NEW
+            out.write(chunk.getMetadataRaw());
             out.write(chunk.getSkyLightRaw());
             out.write(chunk.getBlockLightRaw());
             out.writeBoolean(chunk.isPopulated);
@@ -55,6 +67,13 @@ public class ChunkSerializer {
         }
     }
 
+    /**
+     * Loads a chunk from disk.
+     *
+     * @param x Chunk X coordinate.
+     * @param z Chunk Z coordinate.
+     * @return The loaded Chunk, or null if not found/corrupted.
+     */
     public static Chunk loadChunk(int x, int z) {
         File file = new File(getFileName(x, z));
         if (!file.exists()) return null;
@@ -72,16 +91,12 @@ public class ChunkSerializer {
             if (version == 1) {
                 // Current Format
                 in.readFully(chunk.getBlocksRaw());
-                in.readFully(chunk.getMetadataRaw()); // Load Metadata
+                in.readFully(chunk.getMetadataRaw());
                 in.readFully(chunk.getSkyLightRaw());
                 in.readFully(chunk.getBlockLightRaw());
                 chunk.isPopulated = in.readBoolean();
             } else {
-                // Legacy Format (Version 0 / No Header)
-                // In a real scenario, this block handles migration.
-                // Since we just started using versioning, we assume old files are incompatible 
-                // OR we try to read strictly assuming old structure.
-                // For safety: Return null (Regenerate) if version mismatch to avoid array index errors.
+                // Handle legacy formats or mismatch
                 System.out.println("Chunk version mismatch (" + version + "). Regenerating.");
                 return null;
             }
@@ -93,6 +108,9 @@ public class ChunkSerializer {
         }
     }
     
+    /**
+     * Saves the world seed.
+     */
     public static void saveSeed(long seed) {
         createDir();
         try (DataOutputStream out = new DataOutputStream(new FileOutputStream(getSaveDir() + "level.dat"))) {
@@ -102,6 +120,10 @@ public class ChunkSerializer {
         }
     }
     
+    /**
+     * Loads the world seed.
+     * @return The seed, or 0 if not found.
+     */
     public static long loadSeed() {
         File f = new File(getSaveDir() + "level.dat");
         if (!f.exists()) return 0;

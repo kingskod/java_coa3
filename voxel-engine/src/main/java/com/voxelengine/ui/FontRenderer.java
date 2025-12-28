@@ -15,12 +15,20 @@ import java.io.File;
 import static org.lwjgl.opengl.GL11.*;
 import static org.lwjgl.opengl.GL30.glGenerateMipmap;
 
+/**
+ * Renders text using a bitmap font texture.
+ */
 public class FontRenderer {
 
     private final int textureId;
     private final Shader shader;
     private final Mesh quadMesh;
 
+    /**
+     * Creates a new FontRenderer.
+     *
+     * @param sharedShader The UI shader to use.
+     */
     public FontRenderer(Shader sharedShader) {
         this.shader = sharedShader;
         this.textureId = loadTexture("assets/ui/font.png");
@@ -37,6 +45,15 @@ public class FontRenderer {
         this.quadMesh = new Mesh(vertices);
     }
 
+    /**
+     * Draws a string of text at the specified position.
+     *
+     * @param text The text to draw.
+     * @param x The screen X coordinate.
+     * @param y The screen Y coordinate.
+     * @param scale The size scale.
+     * @param projection The projection matrix.
+     */
     public void drawText(String text, float x, float y, float scale, Matrix4f projection) {
         glBindTexture(GL_TEXTURE_2D, textureId);
         
@@ -58,7 +75,7 @@ public class FontRenderer {
             int col = ascii % 16;
             int row = ascii / 16;
             
-            // Calc offset
+            // Calculate texture offset for character
             shader.setUniform("uUVOffset", new Vector2f(col / 16.0f, row / 16.0f));
             
             Matrix4f model = new Matrix4f()
@@ -68,7 +85,7 @@ public class FontRenderer {
             shader.setUniform("uModel", model);
             quadMesh.render();
             
-            x += 10 * scale; // Kerning
+            x += 10 * scale; // Horizontal spacing (kerning)
         }
     }
     
@@ -97,7 +114,7 @@ public class FontRenderer {
                 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
                 STBImage.stbi_image_free(img);
             } else {
-                // Pink Fallback
+                // Pink Fallback for missing font
                 ByteBuffer pink = stack.malloc(4 * 16 * 16);
                 for(int i=0; i<16*16; i++) pink.putInt(0xFF00FFFF);
                 pink.flip();

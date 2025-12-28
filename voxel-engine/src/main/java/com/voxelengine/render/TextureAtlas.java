@@ -15,23 +15,25 @@ import static org.lwjgl.opengl.GL12.GL_CLAMP_TO_EDGE;
 import static org.lwjgl.opengl.GL30.glGenerateMipmap;
 
 /**
- * Stitches all block textures into a single texture map at runtime.
- * Calculates UV coordinates for each block.
+ * Loads individual block textures and stitches them into a single texture atlas.
+ * Manages texture indices for shader lookups.
  */
 public class TextureAtlas {
 
     private static final int BLOCK_SIZE = 16;
-    private static final int ATLAS_SIZE = 256; // 16x16 blocks capacity
+    private static final int ATLAS_SIZE = 256; // Capacity: 16x16 = 256 textures
     private int textureId;
 
     // Map texture name (e.g. "grass") to UV index (0..255)
     private final Map<String, Integer> textureIndex = new HashMap<>();
 
     public TextureAtlas() {
-        // Pre-register known textures to specific indices if needed,
-        // or just load directory.
+        // Initializes empty atlas map. Textures are loaded in build().
     }
 
+    /**
+     * Scans the texture directory, loads PNG files, stitches them, and uploads to GPU.
+     */
     public void build() {
         File dir = new File("src/main/resources/assets/textures");
         if (!dir.exists()) return;
@@ -53,7 +55,7 @@ public class TextureAtlas {
                     String name = f.getName().replace(".png", "");
                     textureIndex.put(name, index);
 
-                    // Advance
+                    // Advance position in grid
                     x += BLOCK_SIZE;
                     if (x >= ATLAS_SIZE) {
                         x = 0;
@@ -83,7 +85,7 @@ public class TextureAtlas {
 
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
-                int pixel = pixels[y * width + x]; // Standard order
+                int pixel = pixels[y * width + x];
                 buffer.put((byte) ((pixel >> 16) & 0xFF)); // R
                 buffer.put((byte) ((pixel >> 8) & 0xFF));  // G
                 buffer.put((byte) (pixel & 0xFF));         // B
@@ -95,6 +97,7 @@ public class TextureAtlas {
         textureId = glGenTextures();
         glBindTexture(GL_TEXTURE_2D, textureId);
 
+        // Nearest neighbor filtering for pixel art look
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -106,26 +109,31 @@ public class TextureAtlas {
 
     public int getTextureId() { return textureId; }
 
-    // Returns the texture index (0..255) for the shader to calculate UVs
-    // Returns the texture index (0..255) for the shader to calculate UVs
+    /**
+     * Gets the texture index for a given block name and face direction.
+     * Supports directional textures (e.g. grass_up, grass_side).
+     *
+     * @param name The base name of the block.
+     * @param dir The direction of the face.
+     * @return The texture index (0-255).
+     */
     public int getIndex(String name, Direction dir) {
-        // 1. Try specific direction (e.g. "grass_up", "log_up")
+        // 1. Try specific direction (e.g. "grass_up")
         String sideName = name + "_" + dir.name().toLowerCase();
         if (textureIndex.containsKey(sideName)) {
             return textureIndex.get(sideName);
         }
         
-        // 2. Try generic "side"/ "top" mapping if horizontal
+        // 2. Try generic vertical/side mapping
         if (dir == Direction.UP || dir == Direction.DOWN) {
-             String topName = name + "_up"; // Try finding _up for both up/down if not specific
+             String topName = name + "_up";
              if (textureIndex.containsKey(topName)) return textureIndex.get(topName);
         } else {
              String sideGeneric = name + "_side";
              if (textureIndex.containsKey(sideGeneric)) return textureIndex.get(sideGeneric);
         }
         
-        // 3. Fallback to base name (e.g., "grass")
+        // 3. Fallback to base name
         return textureIndex.getOrDefault(name, 0); 
-    } // 2. Fallback to base name (e.g., "grass")
-       
+    }
 }

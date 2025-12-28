@@ -2,21 +2,24 @@ package com.voxelengine.ui;
 
 import com.voxelengine.world.Block;
 
+/**
+ * Manages the player's inventory, including hotbar and storage slots.
+ */
 public class Inventory {
 
     private final ItemStack[] slots;
     private final int size = 36; // 9 Hotbar + 27 Storage
-    private int selectedSlot = 0; // 0-8
+    private int selectedSlot = 0; // 0-8 (Hotbar range)
 
     public Inventory() {
         slots = new ItemStack[size];
         
-        // Initialize empty
+        // Initialize empty slots
         for (int i = 0; i < size; i++) {
             slots[i] = new ItemStack(Block.AIR, 0);
         }
 
-        // Fill hotbar with default stacks
+        // Fill hotbar with default starting items
         slots[0] = new ItemStack(Block.STONE, 64);
         slots[1] = new ItemStack(Block.GRASS, 64);
         slots[2] = new ItemStack(Block.DIRT, 64);
@@ -27,8 +30,7 @@ public class Inventory {
         slots[7] = new ItemStack(Block.LOG, 64);
         slots[8] = new ItemStack(Block.LEAVES, 64);
         
-        // Debug: Add new water/ore blocks to inventory storage (slots 9+)
-        // These won't show in hotbar yet but exist in data
+        // Add additional items to main inventory storage
         slots[9] = new ItemStack(Block.WATER_SOURCE, 1);
         slots[10] = new ItemStack(Block.DIAMOND_ORE, 64);
         slots[11] = new ItemStack(Block.REDSTONE_LAMP_OFF, 16);
@@ -38,7 +40,11 @@ public class Inventory {
         return slots[selectedSlot];
     }
     
-    // Decrements the selected stack by 1. Returns true if successful.
+    /**
+     * Decrements the selected stack count by 1.
+     *
+     * @return True if successful, false if empty.
+     */
     public boolean useSelectedItem() {
         ItemStack stack = slots[selectedSlot];
         if (stack.isEmpty()) return false;
@@ -50,6 +56,13 @@ public class Inventory {
         return true;
     }
 
+    /**
+     * Adds an item stack to the inventory.
+     * Tries to merge with existing stacks first, then finds an empty slot.
+     *
+     * @param stack The stack to add.
+     * @return True if fully added, false if inventory is full.
+     */
     public boolean add(ItemStack stack) {
         // 1. Try to merge into existing stacks
         for (int i = 0; i < size; i++) {
@@ -82,7 +95,6 @@ public class Inventory {
 
     public int getSelectedSlot() { return selectedSlot; }
 
-    // Helper for UIManager to get Block type easily
     public Block getItemType(int slot) {
         if (slot < 0 || slot >= size) return Block.AIR;
         return slots[slot].getBlock();
@@ -92,10 +104,12 @@ public class Inventory {
         if (slot < 0 || slot >= size) return new ItemStack(Block.AIR, 0);
         return slots[slot];
     }
+
+    /**
+     * Saves the inventory to disk.
+     */
     public void save() {
         try (java.io.DataOutputStream out = new java.io.DataOutputStream(new java.io.FileOutputStream("saves/world1/player.dat"))) {
-            // Save position? Ideally pass Player here.
-            // Save Slots
             for(int i=0; i<size; i++) {
                 ItemStack stack = slots[i];
                 out.writeByte(stack.getBlock().getId());
@@ -104,6 +118,9 @@ public class Inventory {
         } catch(java.io.IOException e) { e.printStackTrace(); }
     }
 
+    /**
+     * Loads the inventory from disk.
+     */
     public void load() {
         java.io.File f = new java.io.File("saves/world1/player.dat");
         if(!f.exists()) return;

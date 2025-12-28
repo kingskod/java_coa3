@@ -4,18 +4,34 @@ import com.voxelengine.entity.EntityManager;
 import com.voxelengine.world.Block;
 import com.voxelengine.world.World;
 
+/**
+ * Handles text-based commands entered via the chat interface.
+ */
 public class CommandManager {
 
     private final World world;
     private final EntityManager entityManager;
     private final Inventory inventory;
 
+    /**
+     * Initializes the command manager.
+     *
+     * @param world The game world.
+     * @param entityManager The entity manager.
+     * @param inventory The player's inventory.
+     */
     public CommandManager(World world, EntityManager entityManager, Inventory inventory) {
         this.world = world;
         this.entityManager = entityManager;
         this.inventory = inventory;
     }
 
+    /**
+     * Parses and executes a command string.
+     * Commands must start with '/'.
+     *
+     * @param command The full command string.
+     */
     public void execute(String command) {
         if (!command.startsWith("/")) return;
         
@@ -41,7 +57,6 @@ public class CommandManager {
                     break;
                     
                 case "clear":
-                    // Clear floating items
                     entityManager.clearAll();
                     System.out.println("Cleared entities.");
                     break;

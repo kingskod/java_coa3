@@ -10,15 +10,21 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
+/**
+ * Utility class to generate default assets (textures, sounds, fonts) if they are missing.
+ * Ensures the game has basic resources to run.
+ */
 public class AssetGenerator {
 
     private static final String RESOURCE_DIR = "src/main/resources/assets";
 
+    /**
+     * Checks for the existence of required assets and generates them if missing.
+     * Creates directories and default files for textures, sounds, and UI elements.
+     */
     public static void verifyAndGenerateAssets() {
         Path root = Paths.get(RESOURCE_DIR);
         FileUtils.ensureDirectory(root);
@@ -30,15 +36,10 @@ public class AssetGenerator {
         generateTextures(root.resolve("textures"));
         generateSounds(root.resolve("sounds"));
         generateUI(root.resolve("ui"));
-        generateFont(root.resolve("ui")); // NEW
+        generateFont(root.resolve("ui"));
     }
 
-    // ... (Keep existing generateTextures and generateSounds methods exactly as before) ...
-    // Note: For brevity in this response, I am not repeating the texture/sound code.
-    // Assume previous methods exist here.
-
     private static void generateTextures(Path dir) {
-        // (Same as Batch 1)
         createSolidTexture(dir, "grass.png", new Color(100, 255, 100));
         createSolidTexture(dir, "dirt.png", new Color(120, 85, 60));
         createSolidTexture(dir, "stone.png", new Color(128, 128, 128));
@@ -67,7 +68,7 @@ public class AssetGenerator {
     }
 
     private static void generateUI(Path dir) {
-        // (Same as Batch 1 crosshair logic)
+        // Crosshair
         File crosshair = dir.resolve("crosshair.png").toFile();
         if (!crosshair.exists()) {
             BufferedImage img = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
@@ -78,6 +79,8 @@ public class AssetGenerator {
             g.dispose();
             try { ImageIO.write(img, "png", crosshair); } catch (IOException e) {}
         }
+
+        // Item Selector
         File selector = dir.resolve("selector.png").toFile();
         if (!selector.exists()) {
             BufferedImage img = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
@@ -96,6 +99,8 @@ public class AssetGenerator {
             g.dispose();
             try { ImageIO.write(img, "png", selector); } catch (IOException e) {}
         }
+
+        // Inventory Tabs
         File tabItems = dir.resolve("tab_items.png").toFile();
         if (!tabItems.exists()) {
             // Standard MC inventory size approx 176x166
@@ -134,12 +139,10 @@ public class AssetGenerator {
     }
 
     private static void generateSounds(Path dir) {
-        // (Same as Batch 1)
         createBeepWav(dir.resolve("break.wav").toFile(), 440, 100);
     }
 
     private static void createBeepWav(File file, int freq, int durationMs) {
-        // (Same as Batch 1 implementation)
         if (file.exists()) return;
         try (FileOutputStream fos = new FileOutputStream(file)) {
             // Minimal placeholder write to prevent crash
@@ -148,8 +151,10 @@ public class AssetGenerator {
     }
 
     /**
-     * Generates a 256x256 bitmap font grid.
-     * ASCII 32-127.
+     * Generates a 256x256 bitmap font grid for ASCII characters 32-127.
+     * Used for text rendering.
+     *
+     * @param dir The directory to save the font image.
      */
     private static void generateFont(Path dir) {
         File fontFile = dir.resolve("font.png").toFile();

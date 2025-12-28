@@ -6,6 +6,10 @@ import com.voxelengine.world.World;
 
 import java.util.Random;
 
+/**
+ * Handles the generation of the world terrain.
+ * Uses fractal noise to create continents, oceans, and hills.
+ */
 public class TerrainGenerator {
 
     private final Noise noise;
@@ -18,7 +22,10 @@ public class TerrainGenerator {
         this.treeGenerator = new TreeGenerator();
     }
 
-    // Fractal Brownian Motion (FBM) for detail
+    /**
+     * Generates Fractal Brownian Motion (FBM) noise.
+     * Combines multiple octaves of noise for detail.
+     */
     private float getNoise(float x, float z, int octaves, float frequency, float amplitude) {
         float total = 0;
         float max = 0;
@@ -28,10 +35,15 @@ public class TerrainGenerator {
             frequency *= 2.0f;
             amplitude *= 0.5f;
         }
-        // Normalize roughly to -1..1 range then to 0..1
+        // Normalize roughly to 0..1 range
         return (total / max + 1.0f) * 0.5f;
     }
 
+    /**
+     * Generates the base terrain for a chunk (Stone, Dirt, Water, etc.).
+     *
+     * @param chunk The chunk to generate.
+     */
     public void generate(Chunk chunk) {
         int cx = chunk.chunkX * 16;
         int cz = chunk.chunkZ * 16;
@@ -42,34 +54,26 @@ public class TerrainGenerator {
                 int wz = cz + z;
 
                 // 1. Continent Noise (Large scale, determines Ocean vs Land)
-                // Low freq (0.003) makes big continents
                 float continent = getNoise(wx, wz, 2, 0.003f, 1.0f); 
                 
-                // 2. Detail Noise (Hills)
+                // 2. Detail Noise (Hills/Roughness)
                 float detail = getNoise(wx, wz, 4, 0.01f, 1.0f);
 
                 // 3. Calculate Height
-                // Sea Level is 60.
-                // Threshold 0.5: < 0.5 is Ocean, > 0.5 is Land.
                 float threshold = 0.5f;
                 int worldHeight;
                 int seaLevel = 60;
 
                 if (continent < threshold) {
-                    // OCEAN
-                    // Ranges from 0.0 to 0.5. Map to depth.
-                    // Smooth curve approaching threshold to prevent underwater cliffs
+                    // OCEAN: Smooth curve approaching threshold
                     float depth = (threshold - continent) / threshold; // 1.0 (Deep) to 0.0 (Shore)
                     worldHeight = seaLevel - (int)(depth * 30); // Max depth 30 blocks
                 } else {
-                    // LAND
-                    // Ranges from 0.5 to 1.0. Map to height.
+                    // LAND: Hills blended by continent factor
                     float heightFactor = (continent - threshold) / (1.0f - threshold); // 0.0 (Shore) to 1.0 (Inland)
                     
-                    // Apply Detail (Hills) only where land is established
-                    // This blends hills down to 0 at the beach
                     float finalHeight = heightFactor * 40.0f; // Base land rise
-                    finalHeight += heightFactor * detail * 20.0f; // Add hills
+                    finalHeight += heightFactor * detail * 20.0f; // Add hill detail
                     
                     worldHeight = seaLevel + (int)finalHeight;
                 }
@@ -81,7 +85,7 @@ public class TerrainGenerator {
                     } else if (y < worldHeight - 3) {
                         chunk.setBlock(x, y, z, Block.STONE);
                     } else if (y < worldHeight) {
-                        // Underwater/Beach is Sand/Gravel
+                        // Underwater/Beach is Sand, otherwise Dirt
                         if (worldHeight <= seaLevel + 1) {
                             chunk.setBlock(x, y, z, Block.SAND);
                         } else {
@@ -103,8 +107,14 @@ public class TerrainGenerator {
         chunk.isPopulated = true;
     }
 
+    /**
+     * Populates the chunk with features like trees (decorators).
+     *
+     * @param chunk The chunk to populate.
+     * @param world The world reference.
+     */
     public void populate(Chunk chunk, World world) {
-        // Deterministic Random per chunk (Trees same every reload)
+        // Deterministic Random per chunk (Trees appear same every reload)
         long chunkSeed = seed + (long)chunk.chunkX * 341873128712L + (long)chunk.chunkZ * 132897987541L;
         Random rng = new Random(chunkSeed);
 
@@ -117,13 +127,12 @@ public class TerrainGenerator {
             int wz = chunk.worldZ + z;
 
             // Forest Noise (Biomes)
-            // If noise > 0.6, Dense Forest. If < 0.4, Plains (No trees).
+            // If noise > 0.6, Dense Forest. If < 0.45, Plains.
             float forestNoise = getNoise(wx, wz, 1, 0.01f, 1.0f);
             
-            // Skip tree if in plains (Create gaps/fields)
             if (forestNoise < 0.45f) continue;
             
-            // Higher chance in forests
+            // Higher chance in dense forest areas
             if (forestNoise > 0.6f || rng.nextInt(10) == 0) {
                 // Find surface
                 int y = 255;
@@ -138,6 +147,4 @@ public class TerrainGenerator {
             }
         }
     }
-    
-    public void exportPreview(String path) {} // Removed to save space
 }
