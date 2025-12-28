@@ -1,0 +1,21 @@
+{
+  "variants": {
+    "": [
+      {
+        "model": "dirt"
+      },
+      {
+        "model": "dirt",
+        "y": 90
+      },
+      {
+        "model": "dirt",
+        "y": 180
+      },
+      {
+        "model": "dirt",
+        "y": 270
+      }
+    ]
+  }
+}

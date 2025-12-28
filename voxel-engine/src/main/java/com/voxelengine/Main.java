@@ -211,3 +211,5 @@ public class Main {
         }
     }
 }
+//things to implement:
+//1)if the block on the world is not a cubical block, i need the block to drop the item png as the floating entity like real minecraft. because as of now it looks very ugly because the block with the texture is floating around

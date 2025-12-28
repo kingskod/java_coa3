@@ -1,91 +1,182 @@
 package com.voxelengine.render;
 
+import com.voxelengine.render.model.BakedModel;
+import com.voxelengine.render.model.BakedQuad;
 import com.voxelengine.render.model.BlockModel;
 import com.voxelengine.render.model.Element;
 import com.voxelengine.utils.Direction;
 import com.voxelengine.world.Block;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 
 public class ModelRegistry {
 
-    private static final Map<Block, BlockModel> models = new HashMap<>();
+    private static final BakedModel[][] fastCache = new BakedModel[256][16];
+    private static TextureAtlas atlas;
 
-    public static void init() {
-        // --- 1. REDSTONE TORCH ---
-        BlockModel torch = new BlockModel();
-        // Stick: 7,0,7 -> 9,10,9. Texture: redstone_torch
-        torch.addElement(buildElement(7, 0, 7, 9, 10, 9, "redstone_torch"));
-        models.put(Block.REDSTONE_TORCH, torch);
-        models.put(Block.REDSTONE_TORCH_OFF, torch);
+    public static void init(TextureAtlas textureAtlas) {
+        atlas = textureAtlas;
+        System.out.println("Initializing Static Model Registry...");
 
-        // --- 2. LOGIC GATES (Generic) ---
-        // AND, OR, XOR, LATCH
-        registerGate(Block.AND_GATE, "and_gate");
-        registerGate(Block.OR_GATE, "or_gate");
-        registerGate(Block.XOR_GATE, "xor_gate");
-        registerGate(Block.LATCH_OFF, "latch_off");
-        registerGate(Block.LATCH_ON, "latch_on");
-        registerGate(Block.COMPARATOR, "comparator");
-        registerGate(Block.REPEATER, "repeater");
+        for (Block b : Block.values()) {
+            if (b == Block.AIR) continue;
+            
+            int id = b.getId() & 0xFF;
+            
+            // 2. Bake for all 16 metadata states
+            for (int meta = 0; meta < 16; meta++) {
+                // Pass metadata to get the correct Variant (On/Off)
+                BlockModel rawModel = getRawModel(b, (byte)meta);
+                
+                if (rawModel != null && !rawModel.getElements().isEmpty()) {
+                    fastCache[id][meta] = bake(rawModel, b, (byte)meta);
+                } else {
+                    fastCache[id][meta] = BakedModel.EMPTY;
+                }
+            }
+        }
+    }
 
-        // --- 3. NAND GATE (Base + Torches) ---
-        BlockModel nand = new BlockModel();
-        addBasePlate(nand, "nand_gate");
-        // Torches from JSON (7,2,2 -> 9,6,4)
-        nand.addElement(buildElement(7, 2, 2, 9, 6, 4, "redstone_torch"));
-        nand.addElement(buildElement(6, 2, 2, 10, 6, 4, "redstone_torch")); // Simplified visual
-        models.put(Block.NAND_GATE, nand);
-
-        // --- 4. NOT GATE (Base + Torch) ---
-        BlockModel notGate = new BlockModel();
-        addBasePlate(notGate, "not_gate");
-        notGate.addElement(buildElement(7, 2, 2, 9, 6, 4, "redstone_torch"));
-        models.put(Block.NOT_GATE, notGate);
-
-        // --- 5. LEVER ---
-         BlockModel lever = new BlockModel();
-        // Base
-        lever.addElement(buildElement(5, 0, 4, 11, 3, 12, "cobblestone"));
-        lever.addElement(buildElement(7, 3, 7, 9, 13, 9, "lever"));
+    /**
+     * MAPPING: Now state-aware. Returns different models based on metadata flags.
+     */
+    private static BlockModel getRawModel(Block b, byte meta) {
+        boolean active = b.isActive(meta);
         
-        // --- 6. SLAB ---
-        BlockModel slab = new BlockModel();
-        slab.addElement(buildElement(0, 0, 0, 16, 8, 16, "smooth_stone")); // Bottom half
-        // Note: Real slabs need a "Top Slab" state logic, handled by metadata later
+        switch (b) {
+            // --- State-Aware Blocks ---
+            case LEVER: 
+                return active ? GeneratedBlockModels.createLeverOn() : GeneratedBlockModels.createLever();
+            
+            // Torches are usually separate Blocks in standard engine, but if using state mapping:
+            case REDSTONE_TORCH: return GeneratedBlockModels.createRedstoneTorch();
+            case REDSTONE_TORCH_OFF: return GeneratedBlockModels.createRedstoneTorchOff(); 
+            
+            // Gates & Lamps
+            case AND_GATE: return active ? GeneratedBlockModels.createAndGateBlockOn() : GeneratedBlockModels.createAndGateBlock();
+            case OR_GATE: return active ? GeneratedBlockModels.createOrGateBlockOn() : GeneratedBlockModels.createOrGateBlock();
+            case NOT_GATE: return active ? GeneratedBlockModels.createNotGateBlockOn() : GeneratedBlockModels.createNotGateBlock();
+            case NAND_GATE: return active ? GeneratedBlockModels.createNandGateBlockOn() : GeneratedBlockModels.createNandGateBlock();
+            case XOR_GATE: return active ? GeneratedBlockModels.createXorGateBlockOn() : GeneratedBlockModels.createXorGateBlock();
+            case LATCH_OFF: return GeneratedBlockModels.createSrLatchBlock();
+            case LATCH_ON: return GeneratedBlockModels.createSrLatchBlockOn();
+            
+            case REDSTONE_LAMP_OFF: return GeneratedBlockModels.createRedstoneLamp();
+            case REDSTONE_LAMP_ON: return GeneratedBlockModels.createRedstoneLampOn();
+
+            // --- Static Blocks ---
+            case REPEATER: return GeneratedBlockModels.createRepeater();
+            case COMPARATOR: return GeneratedBlockModels.createComparator();
+            case WIRE: return GeneratedBlockModels.createRedstoneWire();
+            
+            case STONE: return GeneratedBlockModels.createStone();
+            case DIRT: return GeneratedBlockModels.createDirt();
+            case GRASS: return GeneratedBlockModels.createGrassBlock();
+            case SAND: return GeneratedBlockModels.createSand();
+            case GRAVEL: return GeneratedBlockModels.createGravel();
+            case DIAMOND_ORE: return GeneratedBlockModels.createDiamondOre();
+            case COBBLESTONE: return GeneratedBlockModels.createCobblestone();
+            case PLANKS: return GeneratedBlockModels.createOakPlanks();
+            case BEDROCK: return GeneratedBlockModels.createBedrock();
+            case GLASS: return GeneratedBlockModels.createGlass();
+            
+            // Trees
+            case LOG: return GeneratedBlockModels.createOakLog();
+            
+            default: return null;
+        }
     }
 
-    private static void registerGate(Block block, String topTexture) {
-        BlockModel model = new BlockModel();
-        addBasePlate(model, topTexture);
-        models.put(block, model);
+    private static BakedModel bake(BlockModel raw, Block block, byte meta) {
+        List<BakedQuad> quads = new ArrayList<>();
+        Direction facing = block.getRotation(meta);
+
+        for (Element e : raw.getElements()) {
+            String texName = "missing";
+            // Grab texture from the first face defined in JSON
+            if (!e.faces.isEmpty()) {
+                texName = e.faces.values().iterator().next().textureName;
+            }
+            
+            float texIdx = atlas.getIndex(texName, Direction.UP);
+            createBoxQuads(quads, e.from.x, e.from.y, e.from.z, e.to.x, e.to.y, e.to.z, texIdx, facing);
+        }
+
+        return new BakedModel(quads, true);
     }
 
-    private static void addBasePlate(BlockModel model, String topTexture) {
-        // Base: Smooth Stone (0,0,0 -> 16,2,16)
-        model.addElement(buildElement(0, 0, 0, 16, 2, 16, "smooth_stone"));
+    private static void createBoxQuads(List<BakedQuad> quads, float x0, float y0, float z0, float x1, float y1, float z1, float texIdx, Direction rotation) {
+        // Apply rotation to the entire box
+        // Simple 90 deg rotation logic around center (0.5, 0.5)
         
-        // Top Decal (0, 2.01, 0 -> 16, 2.01, 16)
-        Element top = new Element(0, 2.01f, 0, 16, 2.01f, 16);
-        top.addFace(Direction.UP, topTexture, new float[]{0, 0, 16, 16}, 0);
-        model.addElement(top);
+        // Helper: Rotate point (px, pz)
+        // 0 (South): x, z
+        // 1 (West):  z, 1-x
+        // 2 (North): 1-x, 1-z
+        // 3 (East):  1-z, x
+        
+        float[] p = new float[12];
+        float[] uv = new float[]{0, 0, 1, 0, 1, 1, 0, 1}; 
+
+        // Generate aligned box first, then rotate vertices
+        // UP Face
+        p = new float[]{x0, y1, z1, x1, y1, z1, x1, y1, z0, x0, y1, z0};
+        rotateVertices(p, rotation);
+        quads.add(new BakedQuad(p.clone(), uv, Direction.UP, texIdx, -1));
+        
+        // DOWN Face
+        p = new float[]{x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1};
+        rotateVertices(p, rotation);
+        quads.add(new BakedQuad(p.clone(), uv, Direction.DOWN, texIdx, -1));
+        
+        // NORTH
+        p = new float[]{x1, y0, z0, x0, y0, z0, x0, y1, z0, x1, y1, z0};
+        rotateVertices(p, rotation);
+        quads.add(new BakedQuad(p.clone(), uv, Direction.NORTH, texIdx, -1));
+        
+        // SOUTH
+        p = new float[]{x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1};
+        rotateVertices(p, rotation);
+        quads.add(new BakedQuad(p.clone(), uv, Direction.SOUTH, texIdx, -1));
+        
+        // WEST
+        p = new float[]{x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0};
+        rotateVertices(p, rotation);
+        quads.add(new BakedQuad(p.clone(), uv, Direction.WEST, texIdx, -1));
+        
+        // EAST
+        p = new float[]{x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1};
+        rotateVertices(p, rotation);
+        quads.add(new BakedQuad(p.clone(), uv, Direction.EAST, texIdx, -1));
+    }
+    
+    private static void rotateVertices(float[] p, Direction rot) {
+        if (rot == Direction.SOUTH) return; // Default
+        
+        for (int i = 0; i < 12; i += 3) {
+            float x = p[i] - 0.5f;
+            float z = p[i+2] - 0.5f;
+            float nx = x, nz = z;
+            
+            if (rot == Direction.WEST) {
+                nx = z; nz = -x;
+            } else if (rot == Direction.NORTH) {
+                nx = -x; nz = -z;
+            } else if (rot == Direction.EAST) {
+                nx = -z; nz = x;
+            }
+            
+            p[i] = nx + 0.5f;
+            p[i+2] = nz + 0.5f;
+        }
     }
 
-    // Helper to build a simple box with same texture on all sides
-    private static Element buildElement(float x1, float y1, float z1, float x2, float y2, float z2, String texture) {
-        Element e = new Element(x1, y1, z1, x2, y2, z2);
-        // Box Mapping UVs
-        e.addFace(Direction.NORTH, texture, new float[]{16-x2, 16-y2, 16-x1, 16-y1}, 0);
-        e.addFace(Direction.SOUTH, texture, new float[]{x1, 16-y2, x2, 16-y1}, 0);
-        e.addFace(Direction.EAST, texture, new float[]{16-z2, 16-y2, 16-z1, 16-y1}, 0);
-        e.addFace(Direction.WEST, texture, new float[]{z1, 16-y2, z2, 16-y1}, 0);
-        e.addFace(Direction.UP, texture, new float[]{x1, z1, x2, z2}, 0);
-        e.addFace(Direction.DOWN, texture, new float[]{x1, 16-z2, x2, 16-z1}, 0);
-        return e;
-    }
-
-    public static BlockModel get(Block block) {
-        return models.get(block);
+    public static BakedModel getModel(Block block, byte meta) {
+        int id = block.getId() & 0xFF;
+        int m = meta & 15;
+        if (fastCache[id] == null) return BakedModel.EMPTY;
+        BakedModel mdl = fastCache[id][m];
+        return (mdl != null) ? mdl : BakedModel.EMPTY;
     }
 }

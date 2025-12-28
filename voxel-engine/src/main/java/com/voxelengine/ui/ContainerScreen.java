@@ -26,6 +26,14 @@ public class ContainerScreen {
     private final Inventory inventory;
     private final TextureAtlas atlas;
     private final FontRenderer fontRenderer;
+    
+    // Texture Constants (tab_items.png)
+    private static final int TEX_WIDTH = 195;
+    private static final int TEX_HEIGHT = 136;
+    private static final int SLOT_SIZE = 15; // 16px item + borders
+    private static final int GRID_START_X = 7;
+    private static final int STORAGE_START_Y = 17; // From Top
+    private static final int HOTBAR_START_Y = 111; // From Top
 
     public ContainerScreen(Inventory inventory, TextureAtlas atlas, FontRenderer fontRenderer) {
         this.inventory = inventory;
@@ -44,65 +52,52 @@ public class ContainerScreen {
         this.bgTexture = loadTexture("assets/ui/tab_items.png");
     }
     
-    // --- Interaction ---
-    
     public void handleMouseClick(float mouseX, float mouseY, int winWidth, int winHeight, int button) {
-        // Calculate Layout same as render
         float scale = 2.0f;
-        float uiWidth = 176 * scale;
-        float uiHeight = 166 * scale;
-        float startX = (winWidth - uiWidth) / 2.0f;
-        float startY = (winHeight - uiHeight) / 2.0f;
         
-        // Check slots
-        // Hotbar (0-8)
-        // Texture Y=142. OpenGL Y (bottom-up) = 166 - 142 - 16 = 8.
-        float hotbarY = startY + (8 * scale);
-        float gridX = startX + (7 * scale);
-        int clickedSlot = checkGridClick(mouseX, mouseY, 0, 9, gridX, hotbarY, scale);
-        
-        // Storage (9-35)
-        // Texture Y=18. OpenGL Y = 166 - 18 - 16 = 132.
-        // Wait, render loop uses logic: 3 rows.
-        // Row 0 is top. Y = startY + (95 * scale)? No, let's match Render Logic.
-        // Render says: Top row is highest Y. 
-        // 166 (total) - 18 (top margin) - 16 (slot) - (18 * 2) (rows) = ...
-        // Let's deduce from visual: Storage block starts at ~middle.
-        
-        // Correct Y Calculation matching Texture:
-        // Top Row (9-17) is at Texture Y=18.
-        // Bottom-up: Y = startY + (166 - 18 - 16)*scale = startY + 132*scale.
-        float storageTopY = startY + (132 * scale);
-        
-        if (clickedSlot == -1) {
-            clickedSlot = checkGridClick(mouseX, mouseY, 9, 36, gridX, storageTopY, scale);
+        // Calculate UI Screen Position (Bottom-Left corner of the UI texture)
+        // Center the 176x166 texture
+        float uiW = TEX_WIDTH * scale;
+        float uiH = TEX_HEIGHT * scale;
+        float uiX = (winWidth - uiW) / 2.0f;
+        float uiY = (winHeight - uiH) / 2.0f;
+
+        // Check Hotbar (0-9)
+        int slot = checkSlots(mouseX, mouseY, 0, 9, uiX, uiY, scale, GRID_START_X, HOTBAR_START_Y);
+        if (slot == -1) {
+            // Check Storage (9-36)
+            slot = checkSlots(mouseX, mouseY, 9, 36, uiX, uiY, scale, GRID_START_X, STORAGE_START_Y);
         }
         
-        if (clickedSlot != -1) {
-            performClick(clickedSlot, button);
+        if (slot != -1) {
+            performClick(slot, button);
         }
     }
     
-    private int checkGridClick(float mx, float my, int startSlot, int endSlot, float gridX, float startY, float scale) {
-        float slotSize = 18 * scale;
+    private int checkSlots(float mx, float my, int startSlot, int endSlot, 
+                           float uiX, float uiY, float scale, 
+                           int texGridX, int texGridY) {
         
-        // We iterate exactly as the render loop does to find the match
         int col = 0;
         int row = 0;
         
         for (int i = startSlot; i < endSlot; i++) {
-            // Hotbar is single row, handled by loop logic naturally if startY correct
-            // For storage, we step DOWN (row++ means Y decreases)
+            // Calculate Slot Position in Window Coords
+            // texGridY is from TOP of texture.
+            // OpenGL Y is Bottom-Up.
+            // slotY = uiY + (TEX_HEIGHT - texGridY - SLOT_SIZE) * scale - (row * SLOT_SIZE * scale)
+            // Actually:
+            // Top of UI is uiY + uiH.
+            // Slot Top is (uiY + uiH) - (texGridY * scale) - (row * stride).
+            // Slot Bottom is Slot Top - (SLOT_SIZE * scale).
             
-            float x = gridX + (col * slotSize);
-            float y = startY - (row * slotSize);
+            float topY = (uiY + TEX_HEIGHT * scale) - (texGridY * scale) - (row * SLOT_SIZE * scale);
+            float bottomY = topY - (SLOT_SIZE * scale);
             
-            // Note: Hotbar loop in Render uses specific logic.
-            // If checking hotbar (0-9), startY is the row itself.
-            // If checking storage (9-36), startY is top row.
+            float leftX = uiX + (texGridX * scale) + (col * SLOT_SIZE * scale);
+            float rightX = leftX + (SLOT_SIZE * scale);
             
-            // Hitbox Check
-            if (mx >= x && mx <= x + slotSize && my >= y && my <= y + slotSize) {
+            if (mx >= leftX && mx < rightX && my >= bottomY && my < topY) {
                 return i;
             }
             
@@ -119,44 +114,35 @@ public class ContainerScreen {
         ItemStack held = inventory.getHeldStack();
         ItemStack clicked = inventory.getStack(slotIndex);
         
-        // Left Click (0)
         if (button == 0) {
             if (held.isEmpty()) {
-                // Pickup
                 if (!clicked.isEmpty()) {
                     inventory.setHeldStack(clicked);
                     inventory.setSlot(slotIndex, new ItemStack(com.voxelengine.world.Block.AIR, 0));
                 }
             } else {
-                // Place / Swap
                 if (clicked.isEmpty()) {
-                    // Place all
                     inventory.setSlot(slotIndex, held);
                     inventory.setHeldStack(new ItemStack(com.voxelengine.world.Block.AIR, 0));
                 } else if (clicked.getBlock() == held.getBlock()) {
-                    // Merge
-                    int remaining = clicked.merge(held);
-                    if (remaining == 0) {
+                    int remainder = clicked.merge(held);
+                    if (remainder == 0) {
                         inventory.setHeldStack(new ItemStack(com.voxelengine.world.Block.AIR, 0));
                     }
                 } else {
-                    // Swap
                     inventory.setSlot(slotIndex, held);
                     inventory.setHeldStack(clicked);
                 }
             }
         }
-        // Right Click Logic (Split) can be added here
     }
-
-    // --- Rendering ---
 
     public void render(Shader shader, int winWidth, int winHeight, Matrix4f ortho, float mouseX, float mouseY) {
         float scale = 2.0f;
-        float uiWidth = 176 * scale;
-        float uiHeight = 166 * scale;
-        float startX = (winWidth - uiWidth) / 2.0f;
-        float startY = (winHeight - uiHeight) / 2.0f;
+        float uiW = TEX_WIDTH * scale;
+        float uiH = TEX_HEIGHT * scale;
+        float uiX = (winWidth - uiW) / 2.0f;
+        float uiY = (winHeight - uiH) / 2.0f;
 
         // 1. Background
         glActiveTexture(GL_TEXTURE0);
@@ -165,7 +151,7 @@ public class ContainerScreen {
         shader.setUniform("uUVScale", -1.0f); 
         shader.setUniform("uColorMod", new Vector4f(1,1,1,1));
         
-        Matrix4f model = new Matrix4f().translate(startX, startY, 0).scale(uiWidth, uiHeight, 1);
+        Matrix4f model = new Matrix4f().translate(uiX, uiY, 0).scale(uiW, uiH, 1);
         shader.setUniform("uModel", model);
         quadMesh.render();
         
@@ -173,19 +159,16 @@ public class ContainerScreen {
         glBindTexture(GL_TEXTURE_2D, atlas.getTextureId());
         shader.setUniform("uUVScale", 1.0f / 16.0f);
         
-        float gridX = startX + (7 * scale);
+        // Render Hotbar Items
+        renderGrid(shader, 0, 9, uiX, uiY, scale, GRID_START_X, HOTBAR_START_Y);
+        // Render Storage Items
+        renderGrid(shader, 9, 36, uiX, uiY, scale, GRID_START_X, STORAGE_START_Y);
         
-        // Visual offsets aligned with Texture
-        float hotbarY = startY + (8 * scale);  // Matches Texture Y=142 approx
-        float storageY = startY + (132 * scale); // Matches Texture Y=18 approx
+        // Render Counts
+        renderCounts(0, 9, uiX, uiY, scale, ortho, GRID_START_X, HOTBAR_START_Y);
+        renderCounts(9, 36, uiX, uiY, scale, ortho, GRID_START_X, STORAGE_START_Y);
         
-        renderGrid(shader, 0, 9, gridX, hotbarY, scale);
-        renderGrid(shader, 9, 36, gridX, storageY, scale);
-        
-        renderCounts(0, 9, gridX, hotbarY, scale, ortho);
-        renderCounts(9, 36, gridX, storageY, scale, ortho);
-        
-        // 3. Render Held Item (Cursor)
+        // 3. Render Held Item
         ItemStack held = inventory.getHeldStack();
         if (!held.isEmpty()) {
             glBindTexture(GL_TEXTURE_2D, atlas.getTextureId());
@@ -193,10 +176,12 @@ public class ContainerScreen {
             
             float itemSize = 16 * scale;
             
-            int index = atlas.getIndex(held.getBlock().name().toLowerCase(), Direction.SOUTH);
+            String icon = held.getBlock().getItemIcon();
+            if (icon == null) icon = held.getBlock().name().toLowerCase();
+            int index = atlas.getIndex(icon, Direction.SOUTH);
+            
             shader.setUniform("uUVOffset", new Vector2f((index%16)/16.0f, (index/16)/16.0f));
             
-            // Center on mouse
             Matrix4f cursorModel = new Matrix4f()
                 .translate(mouseX - itemSize/2, mouseY - itemSize/2, 0)
                 .scale(itemSize, itemSize, 1);
@@ -210,10 +195,12 @@ public class ContainerScreen {
         }
     }
     
-    private void renderGrid(Shader shader, int startSlot, int endSlot, float startX, float startY, float scale) {
-        float slotSize = 18 * scale;
-        float itemSize = 16 * scale;
-        float padding = (slotSize - itemSize) / 2;
+    private void renderGrid(Shader shader, int startSlot, int endSlot, 
+                            float uiX, float uiY, float scale, 
+                            int texGridX, int texGridY) {
+        
+        float itemSize = 16 * scale; // Items are 16x16
+        // Slot is 18x18. Item is centered: 1px offset in texture.
         
         int col = 0;
         int row = 0;
@@ -221,10 +208,25 @@ public class ContainerScreen {
         for (int i = startSlot; i < endSlot; i++) {
             ItemStack stack = inventory.getStack(i);
             if (!stack.isEmpty()) {
-                float x = startX + (col * slotSize) + padding;
-                float y = startY - (row * slotSize) + padding;
+                // Determine screen position
+                // Center of item in slot.
+                // Tex Pos: texGridX + 1 + (col*18)
                 
-                int index = atlas.getIndex(stack.getBlock().name().toLowerCase(), Direction.SOUTH);
+                float xOffset = (texGridX + 1 + (col * 18)) * scale;
+                // Y calculation: From Top of UI down to Item Top
+                // Item Top in Texture: texGridY + 1 + (row*18)
+                float texItemTop = texGridY + 1 + (row * 18);
+                // Convert to Bottom-Up OpenGL Y
+                // itemY (bottom) = (uiY + uiH) - texItemTop * scale - itemSize
+                float yOffset = (TEX_HEIGHT * scale) - (texItemTop * scale) - itemSize;
+                
+                float x = uiX + xOffset;
+                float y = uiY + yOffset;
+                
+                String icon = stack.getBlock().getItemIcon();
+                if (icon == null) icon = stack.getBlock().name().toLowerCase();
+                
+                int index = atlas.getIndex(icon, Direction.SOUTH);
                 float tx = index % 16;
                 float ty = index / 16;
                 shader.setUniform("uUVOffset", new Vector2f(tx / 16.0f, ty / 16.0f));
@@ -241,16 +243,20 @@ public class ContainerScreen {
         }
     }
     
-    private void renderCounts(int startSlot, int endSlot, float startX, float startY, float scale, Matrix4f ortho) {
-        float slotSize = 18 * scale;
+    private void renderCounts(int startSlot, int endSlot, float uiX, float uiY, float scale, Matrix4f ortho, int texGridX, int texGridY) {
         int col = 0;
         int row = 0;
         for (int i = startSlot; i < endSlot; i++) {
             ItemStack stack = inventory.getStack(i);
             if (!stack.isEmpty() && stack.getCount() > 1) {
-                float x = startX + (col * slotSize);
-                float y = startY - (row * slotSize);
-                fontRenderer.drawText(String.valueOf(stack.getCount()), x + 2, y + 2, 1.0f, ortho);
+                float xOffset = (texGridX + 1 + (col * 18)) * scale;
+                float texItemTop = texGridY + 1 + (row * 18);
+                float yOffset = (TEX_HEIGHT * scale) - (texItemTop * scale) - (16*scale);
+                
+                float x = uiX + xOffset;
+                float y = uiY + yOffset;
+                
+                fontRenderer.drawText(String.valueOf(stack.getCount()), x + 2, y, 1.0f, ortho);
             }
             col++;
             if (col >= 9) { col = 0; row++; }
@@ -258,7 +264,6 @@ public class ContainerScreen {
     }
 
     private int loadTexture(String path) {
-        // (Use robust load from previous batches)
         int texId = glGenTextures();
         glBindTexture(GL_TEXTURE_2D, texId);
         String finalPath = path;

@@ -1,0 +1,37 @@
+{
+  "render_type": "cutout",
+  "variants": {
+    "facing=north,powered=false": {
+      "model": "3or_gate_block",
+      "y": 180
+    },
+    "facing=east,powered=false": {
+      "model": "3or_gate_block",
+      "y": 270
+    },
+    "facing=south,powered=false": {
+      "model": "3or_gate_block",
+      "y": 0
+    },
+    "facing=west,powered=false": {
+      "model": "3or_gate_block",
+      "y": 90
+    },
+    "facing=north,powered=true": {
+      "model": "3or_gate_block_on",
+      "y": 180
+    },
+    "facing=east,powered=true": {
+      "model": "3or_gate_block_on",
+      "y": 270
+    },
+    "facing=south,powered=true": {
+      "model": "3or_gate_block_on",
+      "y": 0
+    },
+    "facing=west,powered=true": {
+      "model": "3or_gate_block_on",
+      "y": 90
+    }
+  }
+}

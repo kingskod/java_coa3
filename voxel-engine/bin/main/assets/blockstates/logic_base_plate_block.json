@@ -1,0 +1,21 @@
+{
+  "render_type": "cutout",
+  "variants": {
+    "facing=north": {
+      "model": "logic_base_plate_block",
+      "y": 180
+    },
+    "facing=east": {
+      "model": "logic_base_plate_block",
+      "y": 270
+    },
+    "facing=south": {
+      "model": "logic_base_plate_block",
+      "y": 0
+    },
+    "facing=west": {
+      "model": "logic_base_plate_block",
+      "y": 90
+    }
+  }
+}

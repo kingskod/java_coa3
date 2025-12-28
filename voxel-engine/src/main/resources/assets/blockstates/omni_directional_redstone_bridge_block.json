@@ -1,0 +1,8 @@
+{
+  "render_type": "cutout",
+  "variants": {
+    "": {
+      "model": "omni_directional_redstone_bridge_block"
+    }
+  }
+}

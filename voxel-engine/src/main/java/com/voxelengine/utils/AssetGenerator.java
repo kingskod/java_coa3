@@ -37,37 +37,85 @@ public class AssetGenerator {
     // Note: For brevity in this response, I am not repeating the texture/sound code.
     // Assume previous methods exist here.
 
-    private static void generateTextures(Path dir) {
-        // (Same as Batch 1)
+private static void generateTextures(Path dir) {
+        // --- Terrain ---
         createSolidTexture(dir, "grass.png", new Color(100, 255, 100));
         createSolidTexture(dir, "dirt.png", new Color(120, 85, 60));
         createSolidTexture(dir, "stone.png", new Color(128, 128, 128));
         createSolidTexture(dir, "sand.png", new Color(240, 240, 180));
-        createSolidTexture(dir, "water.png", new Color(60, 100, 255));
-        createSolidTexture(dir, "wood.png", new Color(100, 60, 30));
+        createSolidTexture(dir, "gravel.png", new Color(120, 120, 120));
+        createSolidTexture(dir, "bedrock.png", new Color(50, 50, 50));
+        createSolidTexture(dir, "cobblestone.png", new Color(100, 100, 100));
+        createSolidTexture(dir, "oak_planks.png", new Color(180, 140, 90));
+        createSolidTexture(dir, "oak_log.png", new Color(100, 60, 30));
+        createSolidTexture(dir, "oak_log_top.png", new Color(140, 100, 60));
         createSolidTexture(dir, "leaves.png", new Color(50, 150, 50));
-        createSolidTexture(dir, "bedrock.png", new Color(20, 20, 20));
-        createSolidTexture(dir, "wire_off.png", new Color(100, 0, 0));
-        createSolidTexture(dir, "wire_on.png", new Color(255, 0, 0));
-        createSolidTexture(dir, "redstone_torch.png", new Color(255, 50, 50));
-        createSolidTexture(dir, "redstone_lamp_off.png", new Color(50, 20, 0));
-        createSolidTexture(dir, "redstone_lamp_on.png", new Color(255, 220, 100));
-        createSolidTexture(dir, "lever.png", new Color(100, 100, 100));
-        createSolidTexture(dir, "and_gate.png", new Color(0, 100, 200));
-        createSolidTexture(dir, "or_gate.png", new Color(0, 200, 100));
-        createSolidTexture(dir, "xor_gate.png", new Color(150, 0, 200));
-        createSolidTexture(dir, "nand_gate.png", new Color(100, 100, 0));
-        createSolidTexture(dir, "not_gate.png", new Color(200, 50, 50));
-        createSolidTexture(dir, "latch_off.png", new Color(50, 50, 50));
-        createSolidTexture(dir, "latch_on.png", new Color(200, 200, 200));
+        createSolidTexture(dir, "oak_leaves.png", new Color(50, 150, 50));
+        createSolidTexture(dir, "glass.png", new Color(200, 220, 255, 100));
+        createSolidTexture(dir, "water.png", new Color(60, 100, 255, 150));
+        createSolidTexture(dir, "diamond_ore.png", new Color(128, 128, 140));
         createSolidTexture(dir, "smooth_stone.png", new Color(160, 160, 160));
-        createSolidTexture(dir, "and_gate_on.png", new Color(0, 150, 255)); // Brighter
-        createSolidTexture(dir, "or_gate_on.png", new Color(0, 255, 150));
-        createSolidTexture(dir, "xor_gate_on.png", new Color(200, 50, 255));
-        createSolidTexture(dir, "nand_gate_on.png", new Color(150, 150, 0));
-        createSolidTexture(dir, "not_gate_on.png", new Color(255, 100, 100));
-        createSolidTexture(dir, "smooth_stone.png", new Color(180, 180, 180));
+
+        // --- Grass Block Specifics (Matches JSON) ---
+        createSolidTexture(dir, "grass_block_top.png", new Color(100, 255, 100));
+        createSolidTexture(dir, "grass_block_side.png", new Color(120, 85, 60)); // Dirt color base
+        // Overlay usually has transparency, simplified here to clear
+        createSolidTexture(dir, "grass_block_side_overlay.png", new Color(0,0,0,0)); 
+
+        // --- Redstone Basics ---
         createSolidTexture(dir, "redstone_dust.png", new Color(200, 0, 0));
+        createSolidTexture(dir, "redstone_dust_dot.png", new Color(200, 0, 0));
+        createSolidTexture(dir, "redstone_dust_line0.png", new Color(100, 0, 0));
+        createSolidTexture(dir, "redstone_dust_line1.png", new Color(255, 0, 0));
+        
+        // Torches
+        createSolidTexture(dir, "redstone_torch.png", new Color(255, 50, 50)); // Lit
+        createSolidTexture(dir, "redstone_torch_off.png", new Color(100, 20, 20)); // Unlit
+
+        // Lamps
+        createSolidTexture(dir, "redstone_lamp.png", new Color(60, 30, 10)); // Off
+        createSolidTexture(dir, "redstone_lamp_on.png", new Color(255, 220, 100)); // On
+        // Block.java might ask for _off explicitly
+        createSolidTexture(dir, "redstone_lamp_off.png", new Color(60, 30, 10)); 
+
+        // Components
+        createSolidTexture(dir, "lever.png", new Color(100, 100, 100));
+        createSolidTexture(dir, "repeater.png", new Color(160, 160, 160));
+        createSolidTexture(dir, "repeater_on.png", new Color(160, 160, 160)); // Add torch pixels manually if needed
+        createSolidTexture(dir, "comparator.png", new Color(160, 160, 160));
+        createSolidTexture(dir, "comparator_on.png", new Color(160, 160, 160));
+
+        // --- Logic Gates (Matches JSON references) ---
+        // Base Gates
+        createGateTexture(dir, "and_gate.png", new Color(0, 100, 200));
+        createGateTexture(dir, "and_gate_on.png", new Color(0, 150, 255));
+        createGateTexture(dir, "or_gate.png", new Color(0, 200, 100));
+        createGateTexture(dir, "or_gate_on.png", new Color(50, 255, 150));
+        createGateTexture(dir, "xor_gate.png", new Color(150, 0, 200));
+        createGateTexture(dir, "xor_gate_on.png", new Color(200, 50, 255));
+        createGateTexture(dir, "nand_gate.png", new Color(100, 100, 0));
+        createGateTexture(dir, "nand_gate_on.png", new Color(255, 255, 0));
+        createGateTexture(dir, "not_gate.png", new Color(200, 50, 50));
+        createGateTexture(dir, "not_gate_on.png", new Color(255, 100, 100));
+        
+        // Latches & Memory
+        createGateTexture(dir, "sr_latch.png", new Color(100, 50, 50));
+        createGateTexture(dir, "sr_latch_on.png", new Color(200, 50, 50));
+        createGateTexture(dir, "latch_off.png", new Color(100, 50, 50)); // Fallback
+        createGateTexture(dir, "latch_on.png", new Color(200, 50, 50)); // Fallback
+        
+        // Complex Chips (Adders, Bridges) - Placeholders
+        createGateTexture(dir, "bi_directional_redstone_bridge_block.png", Color.GRAY);
+        createGateTexture(dir, "bi_directional_redstone_bridge_block_e_off.png", Color.DARK_GRAY);
+        createGateTexture(dir, "bi_directional_redstone_bridge_block_e_on.png", Color.LIGHT_GRAY);
+        createGateTexture(dir, "bi_directional_redstone_bridge_block_on.png", Color.WHITE);
+        
+        createGateTexture(dir, "full_adder_top.png", Color.CYAN);
+        createGateTexture(dir, "full_adder_bottom.png", Color.BLUE);
+        createGateTexture(dir, "half_adder_top.png", Color.ORANGE);
+        createGateTexture(dir, "half_adder_bottom.png", Color.RED);
+
+        // Icons
         createSolidTexture(dir, "and_gate_item.png", new Color(0, 100, 200));
         createSolidTexture(dir, "or_gate_item.png", new Color(0, 200, 100));
         createSolidTexture(dir, "xor_gate_item.png", new Color(150, 0, 200));
@@ -77,6 +125,20 @@ public class AssetGenerator {
         createSolidTexture(dir, "water_bucket.png", new Color(0, 0, 255));
     }
 
+    private static void createGateTexture(Path dir, String name, Color color) {
+        File file = dir.resolve(name).toFile();
+        if (file.exists()) return;
+        BufferedImage image = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = image.createGraphics();
+        // Background
+        g.setColor(new Color(180, 180, 180));
+        g.fillRect(0, 0, 16, 16);
+        // Symbol
+        g.setColor(color);
+        g.fillRect(4, 4, 8, 8);
+        g.dispose();
+        try { ImageIO.write(image, "png", file); } catch (IOException e) {}
+    }
     private static void createSolidTexture(Path dir, String name, Color color) {
         File file = dir.resolve(name).toFile();
         if (file.exists()) return;

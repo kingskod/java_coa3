@@ -8,6 +8,7 @@ public class World {
     private final ChunkManager chunkManager;
     private final LightingEngine lightingEngine;
     private final LogicSystem logicSystem;
+    private boolean doDaylightCycle = true;
     
     private long time = 6000; 
 
@@ -16,6 +17,7 @@ public class World {
         this.logicSystem = new LogicSystem(this);
         this.lightingEngine = new LightingEngine(this);
         this.chunkManager.setLighting(this.lightingEngine);
+        
     }
 
     public Block getBlock(int x, int y, int z) {
@@ -37,13 +39,9 @@ public class World {
         if (!isLoaded(x, z)) return;
         
         Chunk c = chunkManager.getChunk(x >> 4, z >> 4);
-        // Delegate to chunk
         c.setMetadata(x & 15, y, z & 15, meta);
-        
-        // Mark chunk as dirty so it saves and re-meshes (visual update)
         c.isDirty = true;
         
-        // Optional: Trigger a logic update if metadata changes state
         logicSystem.updateNetwork(x, y, z);
     }
 
@@ -67,12 +65,9 @@ public class World {
             logicSystem.scheduleTick(x, y, z, block, 5);
         }
         
-        // NEW: Gravity Trigger
-        // 1. If I am a falling block, start falling
         if (block.hasGravity()) {
             logicSystem.scheduleTick(x, y, z, block, 2);
         }
-        // 2. Wake up block ABOVE me (maybe I broke the floor?)
         Block above = getBlock(x, y + 1, z);
         if (above.hasGravity()) {
             logicSystem.scheduleTick(x, y + 1, z, above, 2);
@@ -108,7 +103,9 @@ public class World {
     }
 
     public void tick() {
-        time = (time + 1) % 24000; 
+        if (doDaylightCycle) {
+            time = (time + 1) % 24000;
+        }
         logicSystem.tick();
     }
     
@@ -116,7 +113,11 @@ public class World {
     public long getTime() { return time; }
     public ChunkManager getChunkManager() { return chunkManager; }
     public boolean isLoaded(int x, int z) { return chunkManager.hasChunk(x >> 4, z >> 4); }
-    
+    public LightingEngine getLightingEngine() { return lightingEngine; }
+    public void setDaylightCycle(boolean value) {
+        this.doDaylightCycle = value;
+    }
+
     public int getSkyLight(int x, int y, int z) {
         if (y < 0 || y >= Chunk.HEIGHT) return 15;
         if (!isLoaded(x, z)) return 15;

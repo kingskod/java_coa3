@@ -131,45 +131,30 @@ public class Main {
     
     // Updated signature to accept TextureAtlas
     private static void raycast(World world, Camera cam, boolean destroy, Inventory inventory, LogicSystem logic, EntityManager entityManager, SoundManager soundManager, TextureAtlas atlas) {
-        Vector3f pos = cam.getPosition();
+        Vector3f pos = new Vector3f(cam.getPosition());
         Vector3f dir = new Vector3f();
         cam.getViewMatrix().positiveZ(dir).negate();
         
-        // Raycasting Params
         float maxDist = 5.0f;
-        
-        // Store best hit
         float closestDist = maxDist;
         int hitX = 0, hitY = 0, hitZ = 0;
-        int sideX = 0, sideY = 0, sideZ = 0; // The side we hit (for placement)
+        int sideX = 0, sideY = 0, sideZ = 0; 
         boolean hitFound = false;
 
-        // Efficient Voxel Traversal (DDA) or just stepped check?
-        // Stepped check (0.05 step) is accurate enough for complex shapes
-        
-        // Optimization: We check blocks along the line.
-        // For each block, we check exact AABB intersection.
-        
         float step = 0.05f;
         Vector3f checkPos = new Vector3f();
         
-        // Set of checked integer coordinates to avoid re-checking same block multiple times per step
-        // (Simplified: just loop)
-        
         for (float d = 0; d < maxDist; d += step) {
             checkPos.set(dir).mul(d).add(pos);
-            
             int x = (int) Math.floor(checkPos.x);
             int y = (int) Math.floor(checkPos.y);
             int z = (int) Math.floor(checkPos.z);
             
             Block b = world.getBlock(x, y, z);
             if (b != Block.AIR && !b.isWater()) {
-                // Check exact shape
                 byte meta = world.getMetadata(x, y, z);
                 AABB box = b.getSelectionBox(x, y, z, meta);
                 if (box != null) {
-                    // Offset box to world space for check
                     AABB worldBox = box.offset(x, y, z);
                     float dist = worldBox.rayIntersect(pos, dir);
                     
@@ -178,18 +163,10 @@ public class Main {
                         hitX = x; hitY = y; hitZ = z;
                         hitFound = true;
                         
-                        // Determine face hit
-                        // Move back slightly along ray
-                        Vector3f hitPoint = new Vector3f(dir).mul(dist).add(pos);
-                        // Simple face determination based on hit point relative to box center/edges?
-                        // Or just step-back method (less accurate but easier):
                         Vector3f prev = new Vector3f(dir).mul(dist - 0.01f).add(pos);
                         sideX = (int)Math.floor(prev.x);
                         sideY = (int)Math.floor(prev.y);
                         sideZ = (int)Math.floor(prev.z);
-                        
-                        // Break early? No, we might hit a torch that is INSIDE the block bounds of air? 
-                        // No, blocks grid. The first solid hit is the closest.
                         break; 
                     }
                 }
@@ -197,29 +174,29 @@ public class Main {
         }
 
         if (hitFound) {
+            // FIX: Interaction Logic (Lever)
+            Block target = world.getBlock(hitX, hitY, hitZ);
+            if (!destroy && target == Block.LEVER) {
+                byte meta = world.getMetadata(hitX, hitY, hitZ);
+                meta ^= 4; // Toggle Bit 2 (Active)
+                world.setMetadata(hitX, hitY, hitZ, meta);
+                logic.updateNetwork(hitX, hitY, hitZ);
+                if (target.getSoundType() != null) soundManager.play("lever.wav"); // Assuming sound exists
+                return;
+            }
+
             if (destroy) {
-                Block b = world.getBlock(hitX, hitY, hitZ);
-                if (b.getSoundType() != null) soundManager.play(b.getSoundType().breakSound);
+                if (target.getSoundType() != null) soundManager.play(target.getSoundType().breakSound);
                 
-                ItemStack drop = new ItemStack(b, 1);
+                ItemStack drop = new ItemStack(target, 1);
                 entityManager.addEntity(new ItemEntity(drop, hitX + 0.5f, hitY + 0.5f, hitZ + 0.5f, atlas));
                 
                 world.setBlock(hitX, hitY, hitZ, Block.AIR);
                 logic.updateNetwork(hitX, hitY, hitZ); 
             } else {
-                // Place
                 ItemStack toPlace = inventory.getSelectedStack();
                 if (toPlace.isEmpty()) return;
-                
-                // Prevent placing inside player (AABB check)
-                // Use sideX/Y/Z calculated above
-                // Note: The simple step-back method works for full cubes. 
-                // For complex shapes, precise face normal is better, but this suffices for now.
-                
-                // Ensure target is replaceable or use offset
-                // Logic: If we hit a block, we place against it (side coords).
-                
-                // Collision check against player
+
                 AABB playerBox = new AABB(pos.x-0.3f, pos.y-1.5f, pos.z-0.3f, pos.x+0.3f, pos.y+0.3f, pos.z+0.3f);
                 AABB blockBox = new AABB(sideX, sideY, sideZ, sideX+1, sideY+1, sideZ+1);
                 
@@ -230,18 +207,9 @@ public class Main {
                     inventory.useSelectedItem();
                     logic.updateNetwork(sideX, sideY, sideZ);
                 }
-                Block target = world.getBlock(hitX, hitY, hitZ);
-                if (target == Block.LEVER) {
-                // Toggle State (Meta Bit 2 is active)
-                    byte meta = world.getMetadata(hitX, hitY, hitZ);
-                    meta ^= 4; // Flip bit 2
-                    world.setMetadata(hitX, hitY, hitZ, meta);
-                    // Trigger updates
-                    logic.updateNetwork(hitX, hitY, hitZ);
-                    soundManager.play("lever.wav"); // If you have it
-                    return; // Don't place a block if we flipped a lever
-                }
             }
         }
     }
 }
+//things to implement:
+//1)if the block on the world is not a cubical block, i need the block to drop the item png as the floating entity like real minecraft. because as of now it looks very ugly because the block with the texture is floating around

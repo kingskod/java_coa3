@@ -53,7 +53,18 @@ public class CommandManager {
                         System.out.println("Time set to " + time);
                     }
                     break;
-                    
+                case "do":
+                    if (parts.length >= 3) {
+                        String rule = parts[1];
+                        String value = parts[2].toLowerCase();
+
+                        if (rule.equalsIgnoreCase("daylightcycle")) {
+                            boolean active = value.equals("true");
+                            world.setDaylightCycle(active);
+                            System.out.println("Gamerule doDaylightCycle set to " + active);
+                        }
+                    }
+                    break;
                 default:
                     System.err.println("Unknown command: " + cmd);
             }

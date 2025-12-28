@@ -13,22 +13,18 @@ public class LogicSystem {
 
     private final World world;
     private final FluidSimulator fluidSimulator;
-    private final GravitySimulator gravitySimulator; // NEW
+    private final GravitySimulator gravitySimulator;
     
-    // Instant Updates (Wires)
     private final Queue<Node> updateQueue = new ConcurrentLinkedQueue<>();
-    
-    // Delayed Updates
     private final PriorityQueue<ScheduledTick> tickQueue = new PriorityQueue<>();
     private long currentTick = 0;
 
     public LogicSystem(World world) {
         this.world = world;
         this.fluidSimulator = new FluidSimulator(world, this);
-        this.gravitySimulator = new GravitySimulator(world, this); // NEW
+        this.gravitySimulator = new GravitySimulator(world, this);
     }
 
-    // --- Tick Engine ---
     public void tick() {
         currentTick++;
         
@@ -43,7 +39,6 @@ public class LogicSystem {
                 if (current.isWater()) {
                     fluidSimulator.update(tick.x, tick.y, tick.z, current);
                 } else if (current.hasGravity()) {
-                    // NEW: Gravity logic
                     gravitySimulator.update(tick.x, tick.y, tick.z, current);
                 } else if (current.isLogicGate()) {
                     LogicGate.updateState(world, tick.x, tick.y, tick.z, current);
@@ -58,7 +53,6 @@ public class LogicSystem {
         tickQueue.add(new ScheduledTick(x, y, z, block, currentTick + delay));
     }
 
-    // --- Redstone Engine ---
     public void updateNetwork(int x, int y, int z) {
         updateQueue.add(new Node(x, y, z));
         LogicGate.evaluate(world, this, x, y, z, world.getBlock(x, y, z));
@@ -99,6 +93,10 @@ public class LogicSystem {
 
             if (newSignal != currentSignal) {
                 world.setBlockLight(node.x, node.y, node.z, newSignal);
+                
+                // FIX: Propagate the new light level to the lighting engine
+                world.getLightingEngine().updateBlock(node.x, node.y, node.z);
+
                 int[][] dirs = {{1,0,0}, {-1,0,0}, {0,1,0}, {0,-1,0}, {0,0,1}, {0,0,-1}};
                 for (int[] d : dirs) {
                     int nx = node.x + d[0];
@@ -113,6 +111,7 @@ public class LogicSystem {
                     }
                 }
                 
+                // Visual Update for Lamp
                 if (block == Block.REDSTONE_LAMP_OFF && newSignal > 0) {
                     world.setBlock(node.x, node.y, node.z, Block.REDSTONE_LAMP_ON);
                 } else if (block == Block.REDSTONE_LAMP_ON && newSignal == 0) {
