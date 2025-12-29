@@ -1,10 +1,9 @@
 package com.voxelengine.render;
 
+import com.voxelengine.render.model.BlockModel;
 import com.voxelengine.render.model.BakedModel;
 import com.voxelengine.render.model.BakedQuad;
-import com.voxelengine.render.model.BlockModel;
-import com.voxelengine.render.model.Element;
-import com.voxelengine.render.model.Face;
+import com.voxelengine.render.model.BlockModel.QuadElement;
 import com.voxelengine.utils.Direction;
 import com.voxelengine.world.Block;
 
@@ -13,152 +12,128 @@ import java.util.List;
 
 public class ModelRegistry {
 
-    // Fast Lookup Cache: [BlockID][Metadata]
-    private static final BakedModel[][] fastCache = new BakedModel[256][16];
+    private static final BakedModel[][] CACHE = new BakedModel[256][16];
     private static TextureAtlas atlas;
 
     public static void init(TextureAtlas textureAtlas) {
         atlas = textureAtlas;
-        System.out.println("Initializing Static Model Registry...");
 
-        // 1. Map Blocks to Generated Models
-        for (Block b : Block.values()) {
-            if (b == Block.AIR) continue;
-            
-            // Get the raw geometry from the Python-generated class
-            BlockModel rawModel = getRawModel(b);
-            
-            // If the python script didn't generate a model for this block, skip
-            if (rawModel == null || rawModel.getElements().isEmpty()) continue;
+        for (Block block : Block.values()) {
+            if (block == Block.AIR) continue;
 
-            // 2. Bake for all 16 metadata states
-            int id = b.getId() & 0xFF;
+            int id = block.getId() & 0xFF;
+
             for (int meta = 0; meta < 16; meta++) {
-                fastCache[id][meta] = bake(rawModel, b, (byte)meta);
+                BlockModel raw = getRawModel(block, (byte) meta);
+                if (raw == null) {
+                    CACHE[id][meta] = BakedModel.EMPTY;
+                    continue;
+                }
+
+                CACHE[id][meta] = bake(raw);
             }
         }
     }
 
-    /**
-     * MAPPING: Connects Block Enums to GeneratedBlockModels methods.
-     * This is the only place you need to touch when adding new blocks via Python.
-     */
-    private static BlockModel getRawModel(Block b) {
-        switch (b) {
-            // --- Logic & Redstone ---
-            case LEVER: return GeneratedBlockModels.createLever();
-            case REDSTONE_TORCH: return GeneratedBlockModels.createRedstoneTorch();
-            case REDSTONE_TORCH_OFF: return GeneratedBlockModels.createRedstoneTorchOff(); // Ensure json name matches
-            case REPEATER: return GeneratedBlockModels.createRepeater();
-            case COMPARATOR: return GeneratedBlockModels.createComparator();
-            case WIRE: return GeneratedBlockModels.createRedstoneWire(); // Ensure wire.json exists
-            
-            // --- Gates ---
-            case AND_GATE: return GeneratedBlockModels.createAndGateBlock();
-            case OR_GATE: return GeneratedBlockModels.createOrGateBlock();
-            case NOT_GATE: return GeneratedBlockModels.createNotGateBlock();
-            case NAND_GATE: return GeneratedBlockModels.createNandGateBlock();
-            case XOR_GATE: return GeneratedBlockModels.createXorGateBlock();
-            case LATCH_OFF: return GeneratedBlockModels.createSrLatchBlock();
-            case LATCH_ON: return GeneratedBlockModels.createSrLatchBlockOn();
-            
-            // --- Standard Blocks (If you have JSONs for them) ---
-            case STONE: return GeneratedBlockModels.createStone();
-            case DIRT: return GeneratedBlockModels.createDirt();
-            case GRASS: return GeneratedBlockModels.createGrassBlock();
-            case SAND: return GeneratedBlockModels.createSand();
-            
-            default: return null;
-        }
-    }
+    private static BakedModel bake(BlockModel model) {
+        List<BakedQuad> baked = new ArrayList<>();
 
-    /**
-     * Converts the Raw Model (0-1 coords + Strings) into Baked Model (World Coords + UVs).
-     * Handles Rotation based on Metadata.
-     */
-    private static BakedModel bake(BlockModel raw, Block block, byte meta) {
-        List<BakedQuad> quads = new ArrayList<>();
-        
-        // Determine Rotation from Metadata
-        Direction facing = block.getRotation(meta);
-        // Active state could define model variants, but our Python script 
-        // generated separate methods (e.g., createLever vs createLeverOn).
-        // For simple rotation, we rotate the quads here.
+        for (QuadElement q : model.getQuads()) {
+            TextureAtlas.Sprite s = atlas.getSprite(q.texture);
 
-        for (Element e : raw.getElements()) {
-            // Resolve Texture
-            // We take the first face's texture as the element texture (Simplified)
-            String texName = "missing";
-            if (!e.faces.isEmpty()) {
-                texName = e.faces.values().iterator().next().textureName;
+            float[] uv = new float[8];
+            for (int i = 0; i < 8; i += 2) {
+                uv[i]     = s.uMin + q.uvs[i]     * (s.uMax - s.uMin);
+                uv[i + 1] = s.vMin + q.uvs[i + 1] * (s.vMax - s.vMin);
             }
-            
-            // Special Case: Dynamic Texture swapping (e.g. Lever On/Off)
-            // If you generated separate JSONs (lever.json and lever_on.json), 
-            // you should swap the call in getRawModel() based on meta, OR handle here.
-            // Since we iterate generic rawModel here, we rely on geometry baking.
-            
-            float texIdx = atlas.getIndex(texName, Direction.UP);
 
-            // Create Quads for the box
-            // Pass the element's local coords (0-1)
-            createBoxQuads(quads, e.from.x, e.from.y, e.from.z, e.to.x, e.to.y, e.to.z, texIdx, facing);
+            baked.add(new BakedQuad(
+                    q.positions,
+                    uv,
+                    q.face,
+                    atlas.getIndex(q.texture, q.face),
+                    -1
+            ));
         }
 
-        return new BakedModel(quads, true);
-    }
-
-    private static void createBoxQuads(List<BakedQuad> quads, float x0, float y0, float z0, float x1, float y1, float z1, float texIdx, Direction facing) {
-        // Rotate geometry based on 'facing'
-        // This rotates the model around the center (0.5, 0.5, 0.5)
-        
-        // ... (We generate the standard box, then rotate vertices) ...
-        // For simplicity in this step, let's generate standard UP facing and rotate.
-        
-        // Vertices 0..1
-        // (Implementation of Quad generation similar to ModelLoader but using direct floats)
-        
-        // Add 6 faces
-        addQuad(quads, x0, y1, z0, x1, y1, z1, Direction.UP, texIdx, facing);
-        addQuad(quads, x0, y0, z0, x1, y0, z1, Direction.DOWN, texIdx, facing);
-        addQuad(quads, x1, y0, z0, x0, y1, z0, Direction.NORTH, texIdx, facing);
-        addQuad(quads, x0, y0, z1, x1, y1, z1, Direction.SOUTH, texIdx, facing);
-        addQuad(quads, x0, y0, z0, x0, y1, z1, Direction.WEST, texIdx, facing);
-        addQuad(quads, x1, y0, z1, x1, y1, z0, Direction.EAST, texIdx, facing);
-    }
-
-    private static void addQuad(List<BakedQuad> quads, float x0, float y0, float z0, float x1, float y1, float z1, Direction face, float texIdx, Direction rotation) {
-        // 1. Define 4 corners for the face
-        float[] p = new float[12]; // 4 vertices * 3 coords
-        
-        // (Simplified logic: Construct the flat face based on 'face' param)
-        // If UP:
-        if (face == Direction.UP) {
-            p = new float[]{x0, y0, z1,  x1, y0, z1,  x1, y0, z0,  x0, y0, z0}; 
-        } else if (face == Direction.DOWN) {
-            p = new float[]{x0, y0, z0,  x1, y0, z0,  x1, y0, z1,  x0, y0, z1};
-        } else if (face == Direction.NORTH) {
-            p = new float[]{x1, y0, z0,  x0, y0, z0,  x0, y1, z0,  x1, y1, z0};
-        } else if (face == Direction.SOUTH) {
-            p = new float[]{x0, y0, z1,  x1, y0, z1,  x1, y1, z1,  x0, y1, z1};
-        } else if (face == Direction.WEST) {
-            p = new float[]{x0, y0, z0,  x0, y0, z1,  x0, y1, z1,  x0, y1, z0};
-        } else if (face == Direction.EAST) {
-            p = new float[]{x1, y0, z1,  x1, y0, z0,  x1, y1, z0,  x1, y1, z1};
-        }
-        
-        // 2. UVs (0..1)
-        float[] uv = new float[]{0, 0, 1, 0, 1, 1, 0, 1}; 
-        
-        // 3. Add to list
-        quads.add(new BakedQuad(p, uv, face, texIdx, -1));
+        return new BakedModel(baked, true);
     }
 
     public static BakedModel getModel(Block block, byte meta) {
         int id = block.getId() & 0xFF;
         int m = meta & 15;
-        if (fastCache[id] == null) return BakedModel.EMPTY;
-        BakedModel mdl = fastCache[id][m];
-        return (mdl != null) ? mdl : BakedModel.EMPTY;
+        return CACHE[id][m] != null ? CACHE[id][m] : BakedModel.EMPTY;
+    }
+
+    // ================= RAW MODEL DISPATCH =================
+
+    private static BlockModel getRawModel(Block b, byte meta) {
+        boolean active = b.isActive(meta);
+
+        switch (b) {
+            case LEVER:
+                return active
+                        ? GeneratedBlockModels.createLeverOn()
+                        : GeneratedBlockModels.createLever();
+
+            case REDSTONE_TORCH:
+                return GeneratedBlockModels.createRedstoneTorch();
+
+            case REDSTONE_TORCH_OFF:
+                return GeneratedBlockModels.createRedstoneTorchOff();
+
+            case AND_GATE:
+                return active
+                        ? GeneratedBlockModels.createAndGateBlockOn()
+                        : GeneratedBlockModels.createAndGateBlock();
+
+            case OR_GATE:
+                return active
+                        ? GeneratedBlockModels.createOrGateBlockOn()
+                        : GeneratedBlockModels.createOrGateBlock();
+
+            case NOT_GATE:
+                return active
+                        ? GeneratedBlockModels.createNotGateBlockOn()
+                        : GeneratedBlockModels.createNotGateBlock();
+
+            case NAND_GATE:
+                return active
+                        ? GeneratedBlockModels.createNandGateBlockOn()
+                        : GeneratedBlockModels.createNandGateBlock();
+
+            case REDSTONE_LAMP_OFF:
+                return GeneratedBlockModels.createRedstoneLamp();
+
+            case REDSTONE_LAMP_ON:
+                return GeneratedBlockModels.createRedstoneLampOn();
+
+            case STONE:
+                return GeneratedBlockModels.createStone();
+
+            case DIRT:
+                return GeneratedBlockModels.createDirt();
+
+            case GRASS:
+                return GeneratedBlockModels.createGrassBlock();
+
+            case COBBLESTONE:
+                return GeneratedBlockModels.createCobblestone();
+
+            case PLANKS:
+                return GeneratedBlockModels.createOakPlanks();
+
+            case BEDROCK:
+                return GeneratedBlockModels.createBedrock();
+
+            case GLASS:
+                return GeneratedBlockModels.createGlass();
+
+            case LOG:
+                return GeneratedBlockModels.createOakLog();
+
+            default:
+                return null;
+        }
     }
 }

@@ -21,7 +21,14 @@ public class GreedyMesher {
             data[size++] = val;
         }
         public float[] toArray() { return Arrays.copyOf(data, size); }
-        public void clear() { size = 0; }
+        public void clear() { 
+            size = 0;
+            // FIX: If buffer got massive (e.g. 10MB+), release it to let GC reclaim space.
+            // 262144 floats = ~1MB.
+            if (data.length > 262144) {
+                data = new float[4096];
+            }
+        }
     }
 
     private final FloatList opaqueBuffer = new FloatList();

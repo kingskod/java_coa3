@@ -11,7 +11,6 @@ public class EntityManager {
 
     private final List<Entity> entities = new ArrayList<>();
     
-    // Safety Queues to prevent ConcurrentModificationException
     private final List<Entity> pendingEntities = new ArrayList<>();
     private final List<Entity> pendingRemoval = new ArrayList<>();
 
@@ -30,8 +29,12 @@ public class EntityManager {
             pendingEntities.clear();
         }
 
-        // 2. Process Removals (Safe time to remove)
+        // 2. Process Removals (FIXED LEAK)
         if (!pendingRemoval.isEmpty()) {
+            for (Entity e : pendingRemoval) {
+                // IMPORTANT: Release OpenGL resources before dropping reference
+                e.cleanup(); 
+            }
             entities.removeAll(pendingRemoval);
             pendingRemoval.clear();
         }
@@ -42,9 +45,10 @@ public class EntityManager {
             Entity e = it.next();
             e.tick(world, physics, dt);
             
-            // Auto-remove dead entities (lifespan)
+            // Auto-remove dead entities
             if (e instanceof ItemEntity && ((ItemEntity) e).isDead()) {
-                it.remove();
+                // Schedule removal so cleanup happens in step 2 next frame
+                remove(e); 
             }
         }
     }
@@ -55,12 +59,17 @@ public class EntityManager {
         }
     }
     
-    // Return a copy or raw list? Raw is faster, but we must not modify it externally.
     public List<Entity> getEntities() {
         return entities;
     }
+    
     public void clearAll() {
+        // Cleanup all active entities
+        for (Entity e : entities) e.cleanup();
+        for (Entity e : pendingEntities) e.cleanup();
+        
         entities.clear();
         pendingEntities.clear();
+        pendingRemoval.clear();
     }
 }

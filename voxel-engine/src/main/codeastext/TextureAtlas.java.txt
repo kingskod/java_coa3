@@ -35,6 +35,17 @@ public class TextureAtlas {
         // Pre-register known textures to specific indices if needed,
         // or just load directory.
     }
+    public static class Sprite {
+        public final float uMin, vMin, uMax, vMax;
+        
+        public Sprite(float uMin, float vMin, float uMax, float vMax) {
+            this.uMin = uMin;
+            this.vMin = vMin;
+            this.uMax = uMax;
+            this.vMax = vMax;
+        }
+    }
+
 
     public void build() {
         File dir = new File("src/main/resources/assets/textures");

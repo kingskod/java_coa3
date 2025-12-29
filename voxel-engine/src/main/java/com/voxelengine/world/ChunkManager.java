@@ -14,7 +14,6 @@ public class ChunkManager {
     private LightingEngine lighting;
     private final World world;
     
-    // Limit threads to 1 to prevent freeze
     private final ExecutorService executor = Executors.newFixedThreadPool(1);
     private final Map<Long, Boolean> pendingChunks = new ConcurrentHashMap<>();
 
@@ -52,7 +51,6 @@ public class ChunkManager {
         int pChunkZ = (int) Math.floor(playerPos.z / 16.0);
         int renderDistance = 8;
 
-        // 1. Identify chunks to load
         List<ChunkCoord> toLoad = new ArrayList<>();
         
         for (int x = -renderDistance; x <= renderDistance; x++) {
@@ -62,18 +60,14 @@ public class ChunkManager {
                 long key = getChunkKey(cx, cz);
                 
                 if (!chunks.containsKey(key) && !pendingChunks.containsKey(key)) {
-                    // Calc distance for priority
                     double distSq = x*x + z*z;
                     toLoad.add(new ChunkCoord(cx, cz, distSq));
                 }
             }
         }
         
-        // 2. Sort by distance (Closest first)
         toLoad.sort(Comparator.comparingDouble(c -> c.dist));
         
-        // 3. Submit top priority tasks
-        // Throttle: Only queue 2-3 chunks per frame to keep input responsive
         int submitted = 0;
         for (ChunkCoord coord : toLoad) {
             if (submitted >= 2) break; 
@@ -82,18 +76,23 @@ public class ChunkManager {
             pendingChunks.put(key, true);
             
             executor.submit(() -> {
-                loadChunkSync(coord.x, coord.z);
-                pendingChunks.remove(key);
+                try {
+                    loadChunkSync(coord.x, coord.z);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                } finally {
+                    // FIX: Ensure key is removed even if generation fails, otherwise
+                    // this chunk creates a permanent hole in the world.
+                    pendingChunks.remove(key);
+                }
             });
             submitted++;
         }
 
-        // 4. Unload (Garbage Collection)
         List<Long> toRemove = new ArrayList<>();
         for (Chunk c : chunks.values()) {
             int dx = c.chunkX - pChunkX;
             int dz = c.chunkZ - pChunkZ;
-            // Unload if slightly outside render distance to prevent rapid toggle
             if (Math.abs(dx) > renderDistance + 2 || Math.abs(dz) > renderDistance + 2) {
                 toRemove.add(getChunkKey(c.chunkX, c.chunkZ));
             }
@@ -104,11 +103,9 @@ public class ChunkManager {
     }
     
     private void loadChunkSync(int chunkX, int chunkZ) {
-        // 1. Try Load from Disk
         Chunk chunk = ChunkSerializer.loadChunk(chunkX, chunkZ);
         
         if (chunk == null) {
-            // 2. Not found, Generate New
             chunk = new Chunk(chunkX, chunkZ);
             generator.generate(chunk);
             long key = getChunkKey(chunkX, chunkZ);
@@ -121,10 +118,8 @@ public class ChunkManager {
                 lighting.stitchChunkBorders(chunkX, chunkZ);
             }
         } else {
-            // 3. Loaded from disk
             long key = getChunkKey(chunkX, chunkZ);
             chunks.put(key, chunk);
-            // We still need to stitch lighting borders in case neighbors changed
             if (lighting != null) {
                 lighting.stitchChunkBorders(chunkX, chunkZ);
             }
@@ -137,7 +132,6 @@ public class ChunkManager {
         markDirty(chunkX, chunkZ - 1);
     }
 
-    // Call this on shutdown
     public void saveAll() {
         System.out.println("Saving world...");
         for (Chunk c : chunks.values()) {
@@ -155,7 +149,6 @@ public class ChunkManager {
         return chunks.values();
     }
     
-    // Helper record
     private static class ChunkCoord {
         int x, z;
         double dist;

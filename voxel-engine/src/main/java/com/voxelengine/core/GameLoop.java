@@ -1,11 +1,7 @@
 package com.voxelengine.core;
 
-import com.voxelengine.render.Renderer;
-import com.voxelengine.world.World;
+import com.voxelengine.render.Mesh;
 
-/**
- * Handles the fixed-timestep game loop.
- */
 public class GameLoop {
 
     private final Window window;
@@ -27,13 +23,14 @@ public class GameLoop {
     public void run() {
         long lastTime = System.nanoTime();
         double accumulator = 0.0;
+        
+        long lastDebug = System.currentTimeMillis();
 
         while (!window.shouldClose()) {
             long now = System.nanoTime();
             double frameTime = (now - lastTime) / 1_000_000_000.0;
             lastTime = now;
 
-            // Cap frame time to prevent spiral of death
             if (frameTime > 0.25) frameTime = 0.25;
 
             accumulator += frameTime;
@@ -43,15 +40,17 @@ public class GameLoop {
                 accumulator -= TICK_DURATION;
             }
 
-            // Alpha for interpolation
-            float alpha = (float) (accumulator / TICK_DURATION);
-
-            // In a full implementation, we pass alpha to render for smoothing
             if (renderCallback != null) renderCallback.run();
 
             window.update();
+            
+            // DEBUG REPORT (Every 1s)
+            if (System.currentTimeMillis() - lastDebug > 1000) {
+                long usedMem = (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / 1024 / 1024;
+                System.out.println("FPS: " + (int)(1.0/frameTime) + " | Heap: " + usedMem + "MB | Meshes: " + Mesh.meshCount.get());
+                lastDebug = System.currentTimeMillis();
+            }
 
-            // Basic performance saver
             try { Thread.sleep(1); } catch (InterruptedException e) {}
         }
     }

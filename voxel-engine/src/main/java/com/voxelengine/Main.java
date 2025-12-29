@@ -172,7 +172,6 @@ public class Main {
                 }
             }
         }
-
         if (hitFound) {
             // FIX: Interaction Logic (Lever)
             Block target = world.getBlock(hitX, hitY, hitZ);
@@ -184,7 +183,6 @@ public class Main {
                 if (target.getSoundType() != null) soundManager.play("lever.wav"); // Assuming sound exists
                 return;
             }
-
             if (destroy) {
                 if (target.getSoundType() != null) soundManager.play(target.getSoundType().breakSound);
                 

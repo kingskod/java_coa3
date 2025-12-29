@@ -2,232 +2,204 @@ import json
 import os
 import math
 
-# --- Configuration ---
+# ================= CONFIG =================
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 INPUT_DIR = os.path.join(SCRIPT_DIR, "src", "main", "resources", "assets", "models", "block")
 OUTPUT_DIR = os.path.join(SCRIPT_DIR, "src", "main", "java", "com", "voxelengine", "render")
-OUTPUT_CLASS_NAME = "GeneratedBlockModels"
-PACKAGE_NAME = "com.voxelengine.render"
+OUTPUT_CLASS = "GeneratedBlockModels"
+PACKAGE = "com.voxelengine.render"
 
-# --- Data Structures ---
-class BakedBox:
-    def __init__(self, x1, y1, z1, x2, y2, z2, texture):
-        self.x1, self.y1, self.z1 = x1, y1, z1
-        self.x2, self.y2, self.z2 = x2, y2, z2
+# ================= DATA =================
+
+class BakedQuad:
+    def __init__(self, positions, uvs, texture, face):
+        self.positions = positions  # 12 floats
+        self.uvs = uvs              # 8 floats (0..1)
         self.texture = texture
+        self.face = face.upper()
 
-# --- Module A: Model Parser (Enhanced for Inheritance) ---
+# ================= PARSER =================
+
 class ModelParser:
-    def __init__(self, root_dir):
-        self.root_dir = root_dir
+    def __init__(self, root):
+        self.root = root
         self.cache = {}
 
-    def load_flattened(self, filename):
-        """
-        Loads a model and recursively resolves its parent to get 'elements'.
-        Returns (elements, textures) tuple or None.
-        """
-        if filename in self.cache: return self.cache[filename]
-        
-        path = os.path.join(self.root_dir, filename)
-        if not path.endswith(".json"): path += ".json"
-        
-        try:
-            with open(path, 'r') as f:
-                data = json.load(f)
-        except Exception as e:
-            print(f"  [Error] Could not read {filename}: {e}")
-            return None
+    def load(self, name):
+        if name in self.cache:
+            return self.cache[name]
 
-        # 1. Resolve Textures
-        my_textures = self.resolve_textures(data.get("textures", {}))
-        
-        # 2. Resolve Elements
-        my_elements = data.get("elements", None)
+        path = os.path.join(self.root, name)
+        if not path.endswith(".json"):
+            path += ".json"
 
-        # 3. Handle Parent
-        if my_elements is None and "parent" in data:
-            parent_name = self.clean_name(data["parent"])
-            # Recursion
-            parent_data = self.load_flattened(parent_name)
-            
-            if parent_data:
-                parent_elems, parent_tex = parent_data
-                my_elements = parent_elems # Inherit elements
-                # Merge textures (Child overrides Parent)
-                for k, v in parent_tex.items():
-                    if k not in my_textures:
-                        my_textures[k] = v
-        
-        # Final texture variable resolution (Resolve #var to values)
-        final_textures = self.finalize_textures(my_textures)
-        
-        result = (my_elements, final_textures)
-        self.cache[filename] = result
-        return result
+        with open(path) as f:
+            data = json.load(f)
 
-    def resolve_textures(self, raw_textures):
-        # Just clean values, don't resolve # variables yet
-        cleaned = {}
-        for k, v in raw_textures.items():
-            cleaned[k] = self.clean_name(v)
-        return cleaned
+        textures = self.resolve_textures(data.get("textures", {}))
+        elements = data.get("elements", [])
 
-    def finalize_textures(self, texture_map):
-        # Resolves #reference to values
-        resolved = {}
-        def lookup(key, stack):
-            if key in stack: return "missing"
-            val = texture_map.get(key, "missing")
-            if val.startswith("#"):
-                return lookup(val[1:], stack + [key])
-            return val
+        if "parent" in data:
+            parent = self.load(self.clean(data["parent"]))
+            if parent:
+                pe, pt = parent
+                elements = elements or pe
+                for k,v in pt.items():
+                    textures.setdefault(k, v)
 
-        for k in texture_map:
-            resolved[k] = lookup(k, [])
-        return resolved
+        self.cache[name] = (elements, textures)
+        return elements, textures
 
-    def clean_name(self, raw_name):
-        if ":" in raw_name: raw_name = raw_name.split(":")[-1]
-        if "/" in raw_name: raw_name = raw_name.split("/")[-1]
-        return raw_name
+    def resolve_textures(self, tex):
+        out = {}
+        for k,v in tex.items():
+            out[k] = self.clean(v)
+        return out
 
-# --- Module B: Geometry Baker ---
+    def clean(self, s):
+        return s.split(":")[-1].split("/")[-1]
+
+# ================= GEOMETRY =================
+
 class GeometryBaker:
-    def bake(self, elements, resolved_textures):
-        if not elements: return []
-        final_boxes = []
+
+    FACE_IDX = {
+        "down":  [0,1,5,4],
+        "up":    [2,3,7,6],
+        "north": [1,0,2,3],
+        "south": [4,5,7,6],
+        "west":  [0,4,6,2],
+        "east":  [5,1,3,7],
+    }
+
+    def bake(self, elements, textures):
+        quads = []
+
         for el in elements:
-            f = el.get("from", [0, 0, 0])
-            t = el.get("to", [16, 16, 16])
-            
-            rot_data = el.get("rotation", None)
-            corners = self._get_corners(f, t)
-            if rot_data: corners = self._apply_rotation(corners, rot_data)
-
-            min_v = [min(c[i] for c in corners) for i in range(3)]
-            max_v = [max(c[i] for c in corners) for i in range(3)]
-            
-            x1, y1, z1 = [v / 16.0 for v in min_v]
-            x2, y2, z2 = [v / 16.0 for v in max_v]
-
+            f = el["from"]
+            t = el["to"]
             faces = el.get("faces", {})
-            used_textures = set()
-            for face_data in faces.values():
-                tex_var = face_data.get("texture", "").replace("#", "")
-                final_tex = resolved_textures.get(tex_var, "missing")
-                used_textures.add(final_tex)
+            rot = el.get("rotation")
 
-            for tex in used_textures:
-                final_boxes.append(BakedBox(x1, y1, z1, x2, y2, z2, tex))
-        return final_boxes
+            corners = self.get_corners(f, t)
+            if rot:
+                corners = self.rotate(corners, rot)
 
-    def _get_corners(self, f, t):
+            for face, idx in self.FACE_IDX.items():
+                if face not in faces:
+                    continue
+
+                face_data = faces[face]
+                tex_ref = face_data["texture"][1:]
+                tex_name = textures.get(tex_ref, "missing")
+
+                # positions
+                pos = []
+                for i in idx:
+                    x,y,z = corners[i]
+                    pos.extend([x/16.0, y/16.0, z/16.0])
+
+                # UVs (pixel -> normalized)
+                if "uv" in face_data:
+                    u0, v0, u1, v1 = face_data["uv"]
+                else:
+                    u0, v0, u1, v1 = 0, 0, 16, 16
+                
+                uv = [
+                    u0 / 16.0, v0 / 16.0,
+                    u1 / 16.0, v0 / 16.0,
+                    u1 / 16.0, v1 / 16.0,
+                    u0 / 16.0, v1 / 16.0,
+                ]
+
+                quads.append(BakedQuad(pos, uv, tex_name, face))
+
+        return quads
+
+    def get_corners(self, f, t):
         return [
-            [f[0], f[1], f[2]], [t[0], f[1], f[2]],
-            [f[0], t[1], f[2]], [t[0], t[1], f[2]],
-            [f[0], f[1], t[2]], [t[0], f[1], t[2]],
-            [f[0], t[1], t[2]], [t[0], t[1], t[2]]
+            [f[0],f[1],f[2]],[t[0],f[1],f[2]],
+            [f[0],t[1],f[2]],[t[0],t[1],f[2]],
+            [f[0],f[1],t[2]],[t[0],f[1],t[2]],
+            [f[0],t[1],t[2]],[t[0],t[1],t[2]]
         ]
 
-    def _apply_rotation(self, corners, rot_data):
-        origin = rot_data.get("origin", [8, 8, 8])
-        axis = rot_data.get("axis", "y")
-        angle = rot_data.get("angle", 0)
-        rad = math.radians(angle)
-        cos_a = math.cos(rad)
-        sin_a = math.sin(rad)
-        new_corners = []
-        for p in corners:
-            x, y, z = p[0] - origin[0], p[1] - origin[1], p[2] - origin[2]
-            if axis == "x":
-                ny = y * cos_a - z * sin_a
-                nz = y * sin_a + z * cos_a
-                y, z = ny, nz
-            elif axis == "y":
-                nx = x * cos_a + z * sin_a
-                nz = -x * sin_a + z * cos_a
-                x, z = nx, nz
-            elif axis == "z":
-                nx = x * cos_a - y * sin_a
-                ny = x * sin_a + y * cos_a
-                x, y = nx, ny
-            new_corners.append([x + origin[0], y + origin[1], z + origin[2]])
-        return new_corners
+    def rotate(self, pts, r):
+        ox,oy,oz = r["origin"]
+        ang = math.radians(r["angle"])
+        ax = r["axis"]
+        ca, sa = math.cos(ang), math.sin(ang)
 
-# --- Module C: Java Emitter ---
+        out = []
+        for x,y,z in pts:
+            x-=ox; y-=oy; z-=oz
+            if ax=="x":
+                y,z = y*ca - z*sa, y*sa + z*ca
+            elif ax=="y":
+                x,z = x*ca + z*sa, -x*sa + z*ca
+            else:
+                x,y = x*ca - y*sa, x*sa + y*ca
+            out.append([x+ox,y+oy,z+oz])
+        return out
+
+# ================= EMITTER =================
+
 class JavaEmitter:
-    def sanitize_name(self, filename):
-        # Handling "stone (1)" -> "Stone1"
-        name = os.path.splitext(filename)[0]
-        name = name.replace("(", "").replace(")", "").replace(" ", "")
-        parts = name.replace("-", "_").split("_")
-        return "".join(p.capitalize() for p in parts)
 
-    def generate_java(self, processed_models):
-        lines = []
-        lines.append(f"package {PACKAGE_NAME};")
-        lines.append("")
-        lines.append("import com.voxelengine.render.model.BlockModel;")
-        lines.append("")
-        lines.append(f"public final class {OUTPUT_CLASS_NAME} {{")
-        lines.append("")
-        
-        for model_name, boxes in processed_models.items():
-            method_name = "create" + self.sanitize_name(model_name)
-            lines.append(f"    public static BlockModel {method_name}() {{")
-            lines.append("        BlockModel model = new BlockModel();")
-            
-            for b in boxes:
-                lines.append(f"        model.addBox({b.x1:.4f}f, {b.y1:.4f}f, {b.z1:.4f}f, "
-                             f"{b.x2:.4f}f, {b.y2:.4f}f, {b.z2:.4f}f, \"{b.texture}\");")
-            
-            lines.append("        return model;")
-            lines.append("    }")
-            lines.append("")
+    def method_name(self, name):
+        base = os.path.splitext(name)[0]
+        return "create" + "".join(p.capitalize() for p in base.replace("-","_").split("_"))
 
-        lines.append("}")
-        return "\n".join(lines)
+    def emit(self, models):
+        out = []
+        out.append(f"package {PACKAGE};\n")
+        out.append("import com.voxelengine.render.model.BlockModel;")
+        out.append("import com.voxelengine.utils.Direction;\n")
+        out.append(f"public final class {OUTPUT_CLASS} {{\n")
 
-# --- Main Driver ---
+        for name, quads in models.items():
+            out.append(f"    public static BlockModel {self.method_name(name)}() {{")
+            out.append("        BlockModel model = new BlockModel();")
+
+            for q in quads:
+                p = ",".join(f"{v:.5f}f" for v in q.positions)
+                uv = ",".join(f"{v:.5f}f" for v in q.uvs)
+                out.append(
+                    f'        model.addQuad(new float[]{{{p}}}, new float[]{{{uv}}}, '
+                    f'Direction.{q.face}, "{q.texture}");'
+                )
+
+            out.append("        return model;")
+            out.append("    }\n")
+
+        out.append("}")
+        return "\n".join(out)
+
+# ================= MAIN =================
+
 def main():
-    print(f"--- Java Model Transpiler v2 (Inheritance Support) ---")
-    if not os.path.exists(INPUT_DIR):
-        print(f"ERROR: Input directory not found: {INPUT_DIR}")
-        return
-
     parser = ModelParser(INPUT_DIR)
     baker = GeometryBaker()
     emitter = JavaEmitter()
-    
-    processed_models = {} 
 
-    files = [f for f in os.listdir(INPUT_DIR) if f.endswith(".json")]
-    print(f"Found {len(files)} JSON models.")
+    models = {}
 
-    for f in files:
-        # Load Flattened (Resolves Parent)
-        result = parser.load_flattened(f)
-        
-        if not result or not result[0]:
-            print(f"  [Skip] {f} (No elements found after inheritance)")
+    for f in os.listdir(INPUT_DIR):
+        if not f.endswith(".json"):
             continue
-            
-        elements, textures = result
-        boxes = baker.bake(elements, textures)
-        processed_models[f] = boxes
-        print(f"  [OK]   {f} -> {len(boxes)} boxes")
+        elements, textures = parser.load(f)
+        quads = baker.bake(elements, textures)
+        models[f] = quads
+        print("OK:", f)
 
-    java_code = emitter.generate_java(processed_models)
-    
-    if not os.path.exists(OUTPUT_DIR):
-        os.makedirs(OUTPUT_DIR)
-        
-    out_path = os.path.join(OUTPUT_DIR, OUTPUT_CLASS_NAME + ".java")
-    with open(out_path, "w") as f:
-        f.write(java_code)
-        
-    print(f"\nSUCCESS: Generated {out_path}")
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    path = os.path.join(OUTPUT_DIR, OUTPUT_CLASS + ".java")
+
+    with open(path, "w") as fp:
+        fp.write(emitter.emit(models))
+
+    print("Generated:", path)
 
 if __name__ == "__main__":
     main()

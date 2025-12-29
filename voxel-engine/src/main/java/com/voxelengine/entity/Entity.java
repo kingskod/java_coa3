@@ -16,21 +16,20 @@ public abstract class Entity {
 
     public Entity(float x, float y, float z, float width, float height) {
         this.position = new Vector3f(x, y, z);
-        
         this.rotation = new Vector3f(0, 0, 0);
-        
         this.velocity = new Vector3f(0, 0, 0);
-        
         this.width = width;
         this.height = height;
-        
         this.boundingBox = AABB.fromPositionSize(position, width, height);
     }
 
     public abstract void tick(World world, PhysicsEngine physics, float dt);
 
-    // Stub for rendering entities later
     public void render(Renderer renderer) {
+    }
+    
+    // NEW: Cleanup resources
+    public void cleanup() {
     }
 
     public Vector3f getPosition() {
